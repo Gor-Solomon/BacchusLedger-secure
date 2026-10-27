@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+data/*.db
+data/*.db-*
+.env
+keys/
+seed-data/

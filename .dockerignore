@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+data/
+*.md
+.git
+.env
+!src/BacchusLedger/knowledge/*.md
+keys/
+seed-data/

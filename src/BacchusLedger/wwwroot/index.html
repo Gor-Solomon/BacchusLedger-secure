@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bacchus Ledger</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236B1E3F'/%3E%3Cpath d='M10 7h12l-1 7a5 5 0 0 1-10 0z' fill='%23fff'/%3E%3Cpath d='M16 19v6M12 26h8' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/inter-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="mode-jury">
+  <div class="shell">
+    <aside class="sidebar no-print" id="sidebar">
+      <a class="brand" href="#/overview"><span class="brand-mark"><span class="ico" style="--i:url('icons/wine.svg')"></span></span>
+        <span><b>Bacchus Ledger</b><small>Farmer → bottle · Kakheti</small></span></a>
+      <nav class="nav" id="nav"></nav>
+      <div class="side-foot">Offline · no sensors needed<br>WINECUBATOR demo</div>
+    </aside>
+    <div class="main-col">
+      <header class="topbar no-print">
+        <button class="icon-btn menu" id="menuBtn" aria-label="Menu"><span class="ico" style="--i:url('icons/layout-dashboard.svg')"></span></button>
+        <div class="page-title" id="pageTitle">Overview</div>
+        <div class="top-actions">
+          <div class="seg-switch" id="modeSwitch" role="group" aria-label="View mode">
+            <button data-mode="jury" title="Big visuals, short sentences">Jury</button><button data-mode="expert" title="Every table, journal and field">Expert</button>
+          </div>
+          <button class="live-switch" id="liveSwitch" role="switch" aria-checked="false" title="Live mode — simulated data">
+            <span class="track"><span class="knob"></span></span><span id="liveText">Live off</span>
+          </button>
+          <button class="icon-btn bell" id="bell" aria-label="Notifications"><span class="ico" style="--i:url('icons/bell.svg')"></span><span class="count hidden" id="bellCount">0</span></button>
+          <div class="lang seg-switch small" role="group" aria-label="Language"><button data-lang="en">EN</button><button data-lang="ka">ქარ</button></div>
+        </div>
+      </header>
+      <main class="main" id="app" tabindex="-1"><p class="muted">Loading…</p></main>
+    </div>
+  </div>
+  <div id="player-root"></div>
+  <script src="i18n.js"></script>
+  <script src="core.js"></script>
+  <script src="viz.js"></script>
+  <script src="readings.js"></script>
+  <script src="story.js"></script>
+  <script src="app.js"></script>
+  <script src="players.js"></script>
+  <script src="live.js"></script>
+  <script src="assistant.js"></script>
+  <script>boot(); Assistant.init();</script>
+</body>
+</html>

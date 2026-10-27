@@ -1,0 +1,17 @@
+{
+  "_about": "Allowed ranges for the Live board range alerts (DEMO ASSUMPTIONS). Edit, then restart the app. A per-vessel entry under 'vessels' wins over the defaults.",
+  "defaults": {
+    "temperature_fermenting_red":   { "min": 20,    "max": 30,    "unit": "°C",  "note": "red and qvevri amber wine, while fermenting" },
+    "temperature_fermenting_white": { "min": 12,    "max": 20,    "unit": "°C",  "note": "white wine, while fermenting" },
+    "temperature_storage":          { "min": 10,    "max": 18,    "unit": "°C",  "note": "cellar / storage (vessel not fermenting)" },
+    "ph":                           { "min": 3.0,   "max": 4.0,   "unit": "pH" },
+    "density":                      { "min": 0.990, "max": 1.130, "unit": "SG",  "note": "from fresh must (~1.13) to dry wine (~0.99)" },
+    "level":                        { "min": 0,     "max": "capacity", "unit": "L", "note": "above the vessel's capacity = overfilled" },
+    "ta":                           { "min": 4.0,   "max": 9.0,   "unit": "g/L" },
+    "initial_brix":                 { "min": 18,    "max": 26,    "unit": "°Bx" },
+    "hydrometer_abv":               { "min": 0,     "max": 16,    "unit": "% vol" }
+  },
+  "vessels": {
+    "_example W01/F-2": { "temperature": { "min": 22, "max": 28 } }
+  }
+}

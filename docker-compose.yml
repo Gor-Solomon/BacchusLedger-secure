@@ -1,0 +1,24 @@
+# Secure demo copy (hash chain + DEMO signature). Separate from the original app:
+# own project name, container, image, volume and port. The database is a copy, not shared.
+name: bacchus-secure
+services:
+  bacchus-secure:
+    build: .
+    image: bacchus-secure:latest
+    container_name: bacchus-secure-app
+    ports:
+      - "8081:8080"
+    volumes:
+      - bacchus-secure-data:/data
+      # DEMO signing key: a local file outside the code and outside the image
+      - ./keys:/keys
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - RESET_ON_START=false
+      - SIGNING_KEY_PATH=/keys/DEMO_KEY_ecdsa_p256_NOT_FOR_PRODUCTION.pem
+    restart: "no"
+volumes:
+  bacchus-secure-data:
+    name: bacchus-secure-data

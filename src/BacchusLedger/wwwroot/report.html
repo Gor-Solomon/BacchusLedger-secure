@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ledger report · Bacchus Ledger</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236B1E3F'/%3E%3Cpath d='M10 7h12l-1 7a5 5 0 0 1-10 0z' fill='%23fff'/%3E%3Cpath d='M16 19v6M12 26h8' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+  <style>
+    body { background: var(--bg); }
+    .rp { max-width: 1040px; margin: 0 auto; padding: var(--s-24) var(--s-16) var(--s-48); }
+    .rp-bar { display: flex; flex-wrap: wrap; gap: var(--s-8); align-items: center; margin-bottom: var(--s-16); }
+    .rp-sheet { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); padding: var(--s-32); box-shadow: var(--shadow); }
+    .rp-head { display: flex; flex-wrap: wrap; gap: var(--s-16); justify-content: space-between; border-bottom: 2px solid var(--wine); padding-bottom: var(--s-16); margin-bottom: var(--s-24); }
+    .rp-head h1 { margin: 0 0 var(--s-4); color: var(--wine); }
+    .rp-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--s-8) var(--s-24); margin: 0 0 var(--s-24); }
+    .rp-meta div span { display: block; font-size: var(--fs-12); color: var(--muted); }
+    .rp h2 { margin: var(--s-32) 0 var(--s-12); padding-bottom: var(--s-8); border-bottom: 1px solid var(--line); }
+    .rp h2 .n { color: var(--wine); margin-right: var(--s-8); }
+    .rp-verdict { display: flex; gap: var(--s-12); align-items: center; padding: var(--s-12) var(--s-16); border-radius: var(--r-ctl); font-weight: 600; }
+    .rp-verdict.ok { background: var(--green-soft); color: var(--green); }
+    .rp-verdict.bad { background: var(--red-soft); color: var(--red); }
+    .rp-verdict.na { background: #EFEDEA; color: #4A454E; }
+    .tw { overflow-x: auto; }
+    table.rt { width: 100%; border-collapse: collapse; font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
+    .rt th { text-align: left; font-size: var(--fs-12); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: var(--s-8); border-bottom: 1px solid var(--line); white-space: nowrap; }
+    .rt td { padding: 6px var(--s-8); vertical-align: top; }
+    .rt td.n, .rt th.n { text-align: right; white-space: nowrap; }
+    .rt tbody tr { border-bottom: 1px solid var(--line); }
+    .rt tr.dr td { padding-top: var(--s-8); }
+    .rt tr.cr { border-bottom: 1px solid var(--line); }
+    .rt tr.dr { border-bottom: 0; }
+    .rt tr.cr td.acct { padding-left: var(--s-32); }
+    .rt tr.k-loss td.acct b, .rt tr.k-loss .amt { color: var(--red); }
+    .rt tr.k-transformation td { background: var(--amber-soft); }
+    .rt tr.k-unexplained td { background: var(--red-soft); }
+    .rt .memo { color: var(--muted); font-size: var(--fs-12); }
+    .kind { display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .ratio { display: inline-block; margin-top: 2px; font-weight: 600; color: #8A5A12; }
+    .bal { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s-16); }
+    .bal-box { border: 1px solid var(--line); border-radius: var(--r-ctl); padding: var(--s-16); }
+    .bal-box h3 { margin-bottom: var(--s-8); }
+    .eq { display: flex; justify-content: space-between; gap: var(--s-12); padding: 4px 0; font-variant-numeric: tabular-nums; }
+    .eq.total { border-top: 1px solid var(--ink); margin-top: 4px; padding-top: 6px; font-weight: 700; }
+    .eq.gap-bad { color: var(--red); font-weight: 700; }
+    .eq.gap-ok { color: var(--green); font-weight: 600; }
+    .sim-box { border: 2px dashed var(--purple); border-radius: var(--r-card); padding: var(--s-16) var(--s-24); background: var(--purple-soft); margin-top: var(--s-32); }
+    .sim-box h2 { border-color: rgba(122, 79, 194, .3); margin-top: 0; color: var(--purple); }
+    .sim-box table { background: var(--surface); }
+    .lv-red { color: var(--red); font-weight: 600; } .lv-amber { color: #8A5A12; font-weight: 600; } .lv-green { color: var(--green); font-weight: 600; }
+    .foot { margin-top: var(--s-32); font-size: var(--fs-12); color: var(--muted); border-top: 1px solid var(--line); padding-top: var(--s-12); }
+    .seal-grid { display: grid; grid-template-columns: 1fr auto; gap: var(--s-24); align-items: start; border: 1px solid var(--line); border-radius: var(--r-ctl); padding: var(--s-16); }
+    .seal-grid > div { min-width: 0; }
+    code.hash { display: block; font-size: 12px; word-break: break-all; background: #F3F1EE; border-radius: 6px; padding: 6px 8px; margin: 2px 0 10px; }
+    .qr { margin: 0; text-align: center; max-width: 200px; } .qr img { display: block; margin: 0 auto 6px; image-rendering: pixelated; }
+    .qr figcaption { word-break: break-all; }
+    td.hc { white-space: nowrap; } code.h { font-size: 11px; color: var(--ink); } code.h.prev { color: var(--muted); }
+    .verify-link { display: inline-block; margin: 0 0 6px; padding: 6px 16px; border: 2px solid var(--green); border-radius: var(--r-ctl); color: var(--green); font-weight: 700; font-size: var(--fs-16);
+      text-decoration: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .verify-link:hover { background: var(--green-soft); text-decoration: none; }
+    @media (max-width: 640px) { .seal-grid { grid-template-columns: 1fr; } .qr { margin: 0 auto; } }
+    @media (max-width: 640px) { .rp-sheet { padding: var(--s-16); } .rt { font-size: var(--fs-12); } }
+    @media print {
+      @page { size: A4; margin: 14mm; }
+      body { background: #fff; }
+      .rp { max-width: none; padding: 0; }
+      .rp-sheet { border: 0; box-shadow: none; padding: 0; }
+      .tw { overflow: visible; }
+      .rt tr, .bal-box, .eq { break-inside: avoid; }
+      .rt thead { display: table-header-group; }
+      h2 { break-after: avoid; }
+      .sim-box { background: #fff; }
+      .rt tr.k-transformation td, .rt tr.k-unexplained td, .rp-verdict { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="rp">
+    <div class="rp-bar no-print">
+      <button class="btn" id="rpPrint" disabled><span class="ico" style="--i:url('icons/file-text.svg')"></span> Print / Save as PDF</button>
+      <a class="btn ghost" href="./#/overview">Back to the app</a>
+      <span class="grow"></span><span class="small muted">Read-only report · nothing is written to the database</span>
+    </div>
+    <main class="rp-sheet" id="report"><p class="muted">Building the report…</p></main>
+  </div>
+  <script src="report.js"></script>
+</body>
+</html>
