@@ -144,6 +144,7 @@ h1 .ico, h3 .ico { width: 18px; height: 18px; color: var(--wine); vertical-align
 .chip.calc { background: var(--blue-soft); color: var(--blue); }
 .chip.demo { background: var(--amber-soft); color: #8A5A12; }
 .chip.sim { background: var(--purple-soft); color: var(--purple); letter-spacing: .04em; }
+.chip.sensor { background: var(--green-soft); color: var(--green); letter-spacing: .04em; }
 .chip.entered { background: #EFEDEA; color: #4A454E; }
 .chip.ref { background: var(--wine-soft); color: var(--wine); }
 .chip.notime { background: #fff; color: var(--muted); border: 1px dashed #C9C2BC; font-weight: 500; }
@@ -379,6 +380,7 @@ svg.viz text { font-family: var(--font); }
 .toast.out { opacity: 0; transform: translateX(16px); transition: all var(--t-med); }
 .toast-usd { font-weight: 700; }
 .toast-sim { font-size: var(--fs-12); color: var(--purple); font-weight: 700; letter-spacing: .04em; margin-top: 2px; }
+.toast-sim.toast-sensor { color: var(--green); }
 @keyframes slidein { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
 
 /* ---------------------------------------------------------------- Live board (TV / projector) */

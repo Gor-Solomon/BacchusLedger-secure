@@ -130,7 +130,8 @@ New tests:
    green "back to normal" when back in range), tagged **SENSOR**. The alert state for sensors (`SensorRangeRules`) is kept apart
    from the simulator's, so real and simulated readings never count towards each other's alerts. With the default ranges
    (0 L – capacity) a dip cannot be out of range; a per-vessel override in ranges.json can make it so (test (a) does this).
-   The UI's toast and feed still show the purple SIMULATED chip on every live notification, also on SENSOR ones (UI unchanged).
+   In the UI an alert tagged SENSOR shows a green **SENSOR** chip (toast, bell feed, notification center, Live board, Cellar and Overview feeds,
+   ledger report); SIMULATED alerts keep the purple SIMULATED chip.
 2. **One event per vessel per simulator step** (not one per tick), so the order per vessel means something. The UI therefore gets
    up to 3 `tick` messages per step instead of 1, and a notification arrives as its own `tick` right after the readings
    (same toast, bell and feed). The SSE message names and JSON shapes are unchanged.

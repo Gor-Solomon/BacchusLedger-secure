@@ -46,7 +46,7 @@ const Live = {
     p.readings.forEach((r) => this.push(r));
     for (const n of p.notifications) {
       this.notes.unshift(n);
-      toast(`${esc(n.message)}${n.value_usd ? ` <span class="toast-usd">≈ ${usd(n.value_usd)}</span>` : ""}<div class="toast-sim">SIMULATED</div>`, n.level, 6000, true);
+      toast(`${esc(n.message)}${n.value_usd ? ` <span class="toast-usd">≈ ${usd(n.value_usd)}</span>` : ""}${n.source === "SENSOR" ? `<div class="toast-sim toast-sensor">SENSOR</div>` : `<div class="toast-sim">SIMULATED</div>`}`, n.level, 6000, true);
     }
     if (this.notes.length > 200) this.notes.length = 200;
     this.renderSwitch(); this.renderBell();
@@ -117,7 +117,7 @@ function feedHtml(notes, { limit = 8, ack = false, empty } = {}) {
       <span class="feed-ic">${ico(icon[n.level] || "bell")}</span>
       <div class="feed-main"><div class="feed-msg">${esc(n.message)}</div>
         <div class="feed-meta"><span>${esc((n.created_at || "").slice(11, 19))}</span>${n.vessel_name ? `<span class="feed-v">${esc(n.vessel_name)}</span>` : ""}
-          ${n.value_usd ? `<span>≈ ${usd(n.value_usd)} ${chip("Calculated", `${fmt(n.value_usd / 2.99, 0)} L × value per litre`)}</span>` : ""}${simChip()}</div></div>
+          ${n.value_usd ? `<span>≈ ${usd(n.value_usd)} ${chip("Calculated", `${fmt(n.value_usd / 2.99, 0)} L × value per litre`)}</span>` : ""}${sourceChip(n.source)}</div></div>
       ${ack && !n.acknowledged && n.level !== "green" ? `<button class="btn ghost small ack" data-id="${n.id}">Acknowledge</button>` : n.acknowledged ? `<span class="feed-ok">${ico("check-circle")}</span>` : ""}</li>`).join("")}</ul>`;
 }
 function bindAcks(el) { $$(".ack", el).forEach((b) => (b.onclick = () => Live.ack(+b.dataset.id))); }

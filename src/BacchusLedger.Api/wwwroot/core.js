@@ -52,6 +52,7 @@ function chipClass(tag) {
   if (tag === "Calculated") return "calc";
   if (tag === "DEMO ASSUMPTION") return "demo";
   if (tag === "SIMULATED") return "sim";
+  if (tag === "SENSOR") return "sensor";
   if (tag.startsWith("Entered")) return "entered";
   if (tag === "time not in dataset") return "notime";
   return "ref";
@@ -67,6 +68,9 @@ const chips = (...items) => `<span class="src multi" tabindex="0"><span class="s
 const chipF = (tag, formula) => chip(tag, formula);
 /** SIMULATED chip is never hidden — live data must always be labelled as simulated. */
 const simChip = () => `<span class="chip sim always" title="Live data is simulated today. Real sensors plug into the same endpoint.">SIMULATED</span>`;
+/** Chip for one live event: SENSOR (a real reading from POST /api/sensors/reading) in green, everything else SIMULATED. */
+const sourceChip = (source) => (source === "SENSOR"
+  ? `<span class="chip sensor always" title="From a real sensor (POST /api/sensors/reading), not simulated.">SENSOR</span>` : simChip());
 const N = (v, tag, unit = "", d = 0) => `<span class="num">${fmt(v, d)}${unit ? " " + unit : ""}</span>${chip(tag)}`;
 
 /** Printable ledger report (read-only) in a new tab; vessel = "W01/F-2" adds the SIMULATED live section. */

@@ -7,7 +7,7 @@ const fmt = (v, d = 0) => (v === null || v === undefined || v === "" || Number.i
 const fmtA = (v, max = 2) => (v === null || v === undefined || v === "" ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: max }));
 const dt = (iso) => { const s = String(iso || ""); return s.length >= 10 ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : s || "—"; };
 const dtt = (iso) => { const s = String(iso || ""); return s.length >= 16 ? `${dt(s)} ${s.slice(11, 16)}` : dt(s); };
-const chip = (tag) => (tag ? `<span class="chip ${tag === "SIMULATED" ? "sim" : tag === "Calculated" ? "calc" : tag.startsWith("Dataset") ? "ds" : tag === "DEMO ASSUMPTION" ? "demo" : "entered"}">${esc(tag)}</span>` : "");
+const chip = (tag) => (tag ? `<span class="chip ${tag === "SIMULATED" ? "sim" : tag === "SENSOR" ? "sensor" : tag === "Calculated" ? "calc" : tag.startsWith("Dataset") ? "ds" : tag === "DEMO ASSUMPTION" ? "demo" : "entered"}">${esc(tag)}</span>` : "");
 const STEP = { intake: "Grapes into vessel", separation: "Pressing / separation", racking_first: "First racking", racking: "Racking", stock_check: "Stock check",
   filtration: "Filtration", transfer: "Transfer", bottling: "Bottling", warehouse: "To warehouse" };
 const stepName = (s) => STEP[String(s).replace(/ /g, "_")] || s;
