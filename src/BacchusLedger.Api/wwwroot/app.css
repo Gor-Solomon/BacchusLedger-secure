@@ -134,6 +134,7 @@ h1 .ico, h3 .ico { width: 18px; height: 18px; color: var(--wine); vertical-align
 .kpi .value { font-size: var(--fs-28); font-weight: 700; line-height: 1.15; margin: var(--s-4) 0; font-variant-numeric: tabular-nums; }
 .kpi.warn { border-color: #EDC3BE; background: #FFFBFA; }
 .kpi.amber { border-color: #EBD3AE; }
+.ob-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-12); margin-bottom: var(--s-8); }
 
 /* ---------------------------------------------------------------- source chips — Jury: an "i" that reveals the chip */
 .src { position: relative; display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; outline: none; }

@@ -73,6 +73,7 @@ public static class DependencyInjection
             .AddScoped<IEventDispatcher, EventDispatcher>()
             .AddScoped<IMessagePublisher, InProcessMessagePublisher>()
             .AddScoped<IOutboxBatchProcessor, OutboxBatchProcessor>()
+            .AddScoped<IOutboxService, OutboxService>()
             .AddScoped<RangeRulesHandler>()
             .AddEventHandler<LiveReadingSimulated, RangeRulesHandler>()
             .AddScoped<LiveStreamHandler>()

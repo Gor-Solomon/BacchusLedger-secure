@@ -18,6 +18,8 @@ services:
     environment:
       - RESET_ON_START=false
       - SIGNING_KEY_PATH=/keys/DEMO_KEY_ecdsa_p256_NOT_FOR_PRODUCTION.pem
+      # DEMO only: share of outbox handler runs that fail on purpose (shows retries and the dead-letter). 0 = off.
+      - OUTBOX_FAIL_RATE=${OUTBOX_FAIL_RATE:-0}
     restart: "no"
 volumes:
   bacchus-secure-data:

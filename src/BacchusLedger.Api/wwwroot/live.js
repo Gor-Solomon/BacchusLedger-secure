@@ -231,6 +231,7 @@ async function pageLiveBoard() {
       <section class="card span-4"><div class="card-head"><h3>${ico("droplet")} <span id="lbT2">Q-3</span> level</h3></div><div id="lbC2"></div></section>
       <section class="card span-4"><div class="card-head"><h3>${ico("flask")} <span id="lbT3">F-2</span> density</h3></div><div id="lbC3"></div></section>
       <section class="card span-12" id="lbScen"></section>
+      <section class="card span-12 expert-only" id="lbOutbox"></section>
     </div>`;
   const byCode = Object.fromEntries(cellar.vessels.map((v) => [v.code, v]));
   const drawMap = () => {
@@ -302,9 +303,27 @@ async function pageLiveBoard() {
   const drawScen = () => { $("#lbScen").innerHTML = scenarioPanel(); bindScenarioPanel($("#lbScen"), drawAll); };
   const drawAll = () => { drawHead(); drawAlerts(); drawMap(); drawCharts(); drawFeed(); drawScen(); };
   drawAll();
+  drawOutboxCard();
   Live.on("tick", () => { drawHead(); drawAlerts(); drawMap(); drawCharts(); });
   Live.on("state", drawAll);
   Live.on("notes", drawFeed);
+}
+/** Expert mode: the event pipeline (transactional outbox) counters, refreshed every 2 s while the Live board is open. */
+function drawOutboxCard() {
+  const paint = async () => {
+    const el = $("#lbOutbox");
+    if (!el) { clearInterval(timer); return; } // left the Live board
+    if (isJury()) return; // the card is hidden in Jury mode
+    let s;
+    try { s = await api("/api/outbox/stats"); } catch { return; }
+    const age = s.oldest_pending_age_seconds;
+    const tile = (label, value, cls = "") => `<div class="kpi ${cls}"><div class="label">${esc(label)}</div><div class="value">${fmt(value, 0)}</div></div>`;
+    el.innerHTML = `<div class="card-head"><h3>${ico("activity")} Event pipeline</h3><span class="muted small">transactional outbox · in-process worker</span></div>
+      <div class="ob-row">${tile("Pending", s.pending)}${tile("Processed", s.processed)}${tile("Failed", s.failed, s.failed ? "warn" : "")}</div>
+      <p class="small muted">${age == null ? "Nothing waiting." : `Oldest pending: ${fmt(age, 1)} s.`} Failed messages: <a href="/api/outbox/failed" target="_blank" rel="noopener">/api/outbox/failed</a></p>`;
+  };
+  const timer = setInterval(paint, 2000);
+  paint();
 }
 function paintLive(sel, key, unit, color, threshold, d) {
   const el = $(sel); if (!el) return;
