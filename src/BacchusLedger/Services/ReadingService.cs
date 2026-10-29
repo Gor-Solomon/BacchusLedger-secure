@@ -4,6 +4,7 @@ using BacchusLedger.Dataset;
 using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Readings;
 
 namespace BacchusLedger.Services;
 
@@ -26,12 +27,12 @@ public sealed class ReadingService(
         {
             double? b = brix.TryGetValue($"{r.BatchId}/{r.VesselId}", out var br) ? br.Value : null;
             return new ReadingRowDto(r.Id, r.BatchId, r.VesselId, r.TakenAt, r.Type, r.Value, r.Unit, r.Instrument, r.Person, r.Note, r.Source, r.BatchCode, r.VesselCode,
-                r.CellarLabel, r.Winery, ToDto(Readings.Calc(r.Type, r.Value, b)), !(r.Note ?? "").StartsWith(SeedDataset.NoTime));
+                r.CellarLabel, r.Winery, ToDto(Calculator.Calculate(r.Type, r.Value, b)), !(r.Note ?? "").StartsWith(SeedDataset.NoTime));
         }).ToList();
         var starts = brix.Values.Select(r => new InitialBrixDto(r.BatchId, r.BatchCode, r.VesselCode, r.CellarLabel, r.TakenAt, r.Value,
-            Readings.PotentialAbv(r.Value), Math.Round(Readings.BrixToSg(r.Value), 4), r.Source)).ToList();
+            new InitialBrix(r.Value).PotentialAbv, Math.Round(new InitialBrix(r.Value).SpecificGravity, 4), r.Source)).ToList();
         List<InitialSugarDto> sugar = batch == null && vid == null ? [] : await lab.InitialSugarAsync(batch, vid);
-        return new ReadingListResponse(list, starts, sugar, new ReadingFormulasDto(Readings.FormulaPotential, Readings.FormulaProgress, Readings.FormulaSg));
+        return new ReadingListResponse(list, starts, sugar, new ReadingFormulasDto(ReadingTypes.FormulaPotential, ReadingTypes.FormulaProgress, ReadingTypes.FormulaSg));
     }
 
     public async Task<ServiceResult<ReadingPreviewResponse>> PreviewAsync(JsonElement body)
@@ -61,16 +62,16 @@ public sealed class ReadingService(
     }
 
     /// Saves a reading (append-only) and returns the warnings shown for it.
-    public async Task<(long id, List<string> warnings)> InsertAsync(Readings.Input r)
+    public async Task<(long id, List<string> warnings)> InsertAsync(ReadingInput r)
     {
         var warnings = await WarningsAsync(r);
-        var id = await readings.InsertAsync(new NewReading(r.BatchId, r.VesselId, r.TakenAt, r.Type, r.Value, Readings.Units[r.Type],
-            r.Instrument ?? Readings.DefaultInstrument[r.Type], r.Person, r.Note, r.Source));
+        var id = await readings.InsertAsync(new NewReading(r.BatchId, r.VesselId, r.TakenAt, r.Type, r.Value, ReadingTypes.Units[r.Type],
+            r.Instrument ?? ReadingTypes.DefaultInstrument[r.Type], r.Person, r.Note, r.Source));
         return (id, warnings);
     }
 
     /// Warnings shown before and after saving (the reading is still saved: corrections are new rows).
-    public async Task<List<string>> WarningsAsync(Readings.Input r)
+    public async Task<List<string>> WarningsAsync(ReadingInput r)
     {
         var w = new List<string>();
         if (r.Type == "initial_brix")
@@ -86,7 +87,7 @@ public sealed class ReadingService(
         return w;
     }
 
-    async Task<(List<Readings.Input>? items, string? error)> InputsAsync(JsonElement body)
+    async Task<(List<ReadingInput>? items, string? error)> InputsAsync(JsonElement body)
     {
         if (body.Num("batch_id") is not { } bid || await batches.GetAsync((long)bid) is not { } b) return (null, "Choose a batch");
         long? vesselId = null;
@@ -98,24 +99,26 @@ public sealed class ReadingService(
         var takenAt = body.Str("taken_at") is { Length: >= 16 } ta ? ta[..16] : DateTime.Now.ToString("yyyy-MM-ddTHH:mm");
         var source = body.Flag("live_demo") ? "Entered (live demo)" : "Entered";
         if (!body.TryGetProperty("readings", out var arr) || arr.ValueKind != JsonValueKind.Array) return (null, "No readings");
-        var list = new List<Readings.Input>();
+        var list = new List<ReadingInput>();
         foreach (var it in arr.EnumerateArray())
         {
             if (it.Num("value") is not { } val) continue; // empty field = not measured
-            var r = new Readings.Input((long)bid, vesselId, takenAt, it.Str("type") ?? "", val,
+            var r = new ReadingInput((long)bid, vesselId, takenAt, it.Str("type") ?? "", val,
                 body.Str("instrument") is { Length: > 0 } ins ? ins : null, body.Str("person"), body.Str("note"), source);
-            if (Readings.Validate(r) is { } err) return (null, err);
+            if (new ReadingValidator().Validate(r) is { } err) return (null, err);
             list.Add(r);
         }
         return list.Count == 0 ? (null, "Enter a value") : (list, null);
     }
 
-    async Task<ReadingResultDto> ResultAsync(Readings.Input r, List<string> warnings, long? id = null)
+    async Task<ReadingResultDto> ResultAsync(ReadingInput r, List<string> warnings, long? id = null)
     {
         // ABV entered together with density uses the Initial Brix of the same vessel/batch
         double? brix = r.Type == "initial_brix" ? r.Value : await readings.LatestBrixAsync(r.BatchId, r.VesselId);
-        return new ReadingResultDto(id, r.Type, r.Value, Readings.Units[r.Type], ToDto(Readings.Calc(r.Type, r.Value, brix)), warnings, r.Source);
+        return new ReadingResultDto(id, r.Type, r.Value, ReadingTypes.Units[r.Type], ToDto(Calculator.Calculate(r.Type, r.Value, brix)), warnings, r.Source);
     }
 
-    static ReadingCalcDto ToDto(Readings.CalcResult c) => new(c.PotentialAbv, c.Sg, c.ProgressPct, c.Formula);
+    static readonly ReadingCalculator Calculator = new();
+
+    static ReadingCalcDto ToDto(ReadingCalculation c) => new(c.PotentialAbv, c.Sg, c.ProgressPct, c.Formula);
 }

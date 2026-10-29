@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BacchusLedger.Contracts.Readings;
+using BacchusLedger.Domain.Readings;
 
 namespace BacchusLedger.Services;
 
@@ -14,8 +15,8 @@ public interface IReadingService
     Task<ServiceResult<ReadingsSavedResponse>> SaveAsync(JsonElement body);
 
     /// Saves one reading and returns its warnings.
-    Task<(long id, List<string> warnings)> InsertAsync(Readings.Input reading);
+    Task<(long id, List<string> warnings)> InsertAsync(ReadingInput reading);
 
     /// Warnings for a reading (e.g. Initial Brix after fermentation started).
-    Task<List<string>> WarningsAsync(Readings.Input reading);
+    Task<List<string>> WarningsAsync(ReadingInput reading);
 }

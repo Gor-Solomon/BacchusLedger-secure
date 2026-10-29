@@ -3,6 +3,7 @@ using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
 using BacchusLedger.Domain.Losses;
+using BacchusLedger.Domain.Readings;
 
 namespace BacchusLedger.Services.SelfTest;
 
@@ -95,9 +96,9 @@ public sealed class CoreSelfTest(
         catch (Exception e) { Add("database", "open database", "ok", e.Message, false); }
 
         // Fermentation readings
-        var pa = Readings.PotentialAbv(22.0);
+        var pa = new InitialBrix(22.0).PotentialAbv;
         Add("readings", "potential_abv(22.0) = 12.98 ± 0.01", "12.98", $"{pa:0.00}", Near(pa, 12.98, 0.01));
-        var sg = Readings.BrixToSg(22.0);
+        var sg = new InitialBrix(22.0).SpecificGravity;
         Add("readings", "brix_to_sg(22.0) ≈ 1.0920 ± 0.001", "1.0920", $"{sg:0.0000}", Near(sg, 1.0920, 0.001));
         try
         {
@@ -123,8 +124,8 @@ public sealed class CoreSelfTest(
             {
                 var b = await batches.FindIdAsync(SeedDataset.W01Batch) ?? 0;
                 var f1 = await vessels.GetIdAsync("W01", "F-1");
-                var (_, w1) = await readingService.InsertAsync(new Readings.Input(b, f1, "2025-09-25T10:00", "initial_brix", 22.0, null, null, "selftest probe", "Entered"));
-                var w0 = await readingService.WarningsAsync(new Readings.Input(b, f1, "2025-09-17T08:00", "initial_brix", 22.0, null, null, null, "Entered"));
+                var (_, w1) = await readingService.InsertAsync(new ReadingInput(b, f1, "2025-09-25T10:00", "initial_brix", 22.0, null, null, "selftest probe", "Entered"));
+                var w0 = await readingService.WarningsAsync(new ReadingInput(b, f1, "2025-09-17T08:00", "initial_brix", 22.0, null, null, null, "Entered"));
                 return (w1, w0);
             });
             Add("readings", "Saving initial_brix after the first fermentation reading of the vessel returns a warning", "warning",

@@ -1,6 +1,7 @@
 using BacchusLedger.Dataset;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Readings;
 
 namespace BacchusLedger.Services;
 
@@ -59,6 +60,6 @@ public sealed class DatasetWriter(
     }
 
     public Task InsertDatasetReadingAsync(long batchId, long? vesselId, string date, string type, double value, string source, string? note) =>
-        readings.InsertAsync(new NewReading(batchId, vesselId, date + "T09:00", type, value, Readings.Units[type], null, null,
+        readings.InsertAsync(new NewReading(batchId, vesselId, date + "T09:00", type, value, ReadingTypes.Units[type], null, null,
             note == null ? SeedDataset.NoTime : $"{SeedDataset.NoTime} · {note}", source));
 }
