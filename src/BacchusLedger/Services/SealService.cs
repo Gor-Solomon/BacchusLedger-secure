@@ -1,7 +1,5 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using BacchusLedger.Contracts.Seal;
+using BacchusLedger.Domain.Seal;
 using BacchusLedger.Models;
 using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
@@ -88,17 +86,18 @@ public sealed class SealService(
             chain.Clear(); seal = null;
         }
         var have = chain.Select(e => (e.Tbl, e.RowId)).ToHashSet();
-        var prev = chain.Count > 0 ? chain[^1].Hash : Genesis(code);
+        var hashes = chain.Count > 0 ? new HashChain(chain[^1].Hash) : HashChain.Start(code);
         long seq = chain.Count;
         int added = 0;
         foreach (var e in (await seals.CurrentEntriesAsync(batchId)).Where(e => !have.Contains((e.Table, e.RowId))))
         {
-            var h = EntryHash(prev, e.Table, (await seals.GetRowAsync(e.Table, e.RowId))!);
+            var prev = hashes.Head;
+            var h = hashes.Append(e.Table, (await seals.GetRowAsync(e.Table, e.RowId))!);
             await seals.AddEntryAsync(batchId, ++seq, e.Table, e.RowId, prev, h);
-            prev = h; added++;
+            added++;
         }
         if (added == 0 && seal != null) return;
-        await seals.SaveAsync(new SealRecord(batchId, code, prev, key.Sign(prev), DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"), seq, key.KeyId));
+        await seals.SaveAsync(new SealRecord(batchId, code, hashes.Head, key.Sign(hashes.Head), DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"), seq, key.KeyId));
     }
 
     public async Task DropAsync(long batchId)
@@ -113,18 +112,17 @@ public sealed class SealService(
         var seal = await seals.GetAsync(batchId);
         if (seal == null) return new(false, "not sealed", null, null, null, null, null, 0, 0, false, key.KeyId);
         var chain = await seals.ChainAsync(batchId);
-        var prev = Genesis(seal.BatchCode);
+        var hashes = HashChain.Start(seal.BatchCode);
         foreach (var e in chain)
         {
             var row = await seals.GetRowAsync(e.Tbl, e.RowId);
             var what = $"{e.Tbl} #{e.RowId}" + ((row?.GetValueOrDefault("date") ?? row?.GetValueOrDefault("taken_at")) is string d ? $" ({d})" : "");
             if (row == null) return Bad(e.Seq, what + " — deleted");
-            var h = EntryHash(prev, e.Tbl, row);
-            if (h != e.Hash || e.Prev != prev) return Bad(e.Seq, what + " — content changed");
-            prev = h;
+            var prev = hashes.Head;
+            if (hashes.Append(e.Tbl, row) != e.Hash || e.Prev != prev) return Bad(e.Seq, what + " — content changed");
         }
         bool sigOk = CheckSignature(seal.FinalHash, seal.Signature);
-        if (prev != seal.FinalHash || !sigOk) return Bad(chain.Count, sigOk ? "final hash does not match the seal" : "signature invalid", sigOk);
+        if (hashes.Head != seal.FinalHash || !sigOk) return Bad(chain.Count, sigOk ? "final hash does not match the seal" : "signature invalid", sigOk);
         var have = chain.Select(e => (e.Tbl, e.RowId)).ToHashSet();
         int unsealed = (await seals.CurrentEntriesAsync(batchId)).Count(e => !have.Contains((e.Table, e.RowId)));
         return new(true, "verified", null, null, seal.FinalHash, seal.Signature, seal.SealedAt, chain.Count, unsealed, true, key.KeyId);
@@ -150,11 +148,4 @@ public sealed class SealService(
         foreach (var e in chain) if (await seals.GetRowAsync(e.Tbl, e.RowId) != null) return false;
         return true;
     }
-
-    static string Sha(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
-    static string Genesis(string batchCode) => Sha("genesis|" + batchCode);
-
-    /// Canonical row content: all columns, sorted by name, as JSON.
-    static string EntryHash(string prev, string table, Dictionary<string, object?> row) =>
-        Sha($"{prev}|{table}|{JsonSerializer.Serialize(new SortedDictionary<string, object?>(row, StringComparer.Ordinal))}");
 }
