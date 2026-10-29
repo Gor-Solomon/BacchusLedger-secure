@@ -9,7 +9,7 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 | 3 | Repositories + remove static infrastructure | done |
 | 4 | Domain classes (pure logic) | done |
 | 5 | Split into Domain, Application, Infrastructure and Api projects | done |
-| 6 | Tests, CI, docs, merge | todo |
+| 6 | Tests, CI, docs, merge | done, except the merge into `main` and the push (not allowed in this session) |
 
 ## Step 1 notes
 
@@ -90,3 +90,27 @@ One commit per calculator, each with build + `check.ps1` + write replay passing.
 - Dockerfile restores/publishes `BacchusLedger.Api.csproj`; ENTRYPOINT is `BacchusLedger.Api.dll`. Same port, volume and env variables.
   `.dockerignore` now keeps `src/BacchusLedger.Api/knowledge/*.md`.
 - `scripts/check.ps1` / `check.sh` default to `src/BacchusLedger.Api`. README local-run path updated.
+
+## Step 6 notes
+
+- `tests/BacchusLedger.Domain.Tests` (xUnit, 30 tests): qvevri and cylinder calibration, W01 losses (450 L total and the 5 step values),
+  the two W03 flagged stages, `potential_abv(22.0) = 12.98`, `brix_to_sg(22.0) ≈ 1.0920`, reading validation, double-entry balance,
+  hash-chain verify / tamper detection.
+- `tests/BacchusLedger.Api.Tests` (xUnit + `WebApplicationFactory`, 51 tests): overview, batch W01, 404 for an unknown batch,
+  selftest returns all pass (81/81), and every baseline endpoint compared byte by byte in process.
+  The tests replace `ILocalApiClient` with a client on the in-memory test server, so the selftest's own HTTP checks also run.
+  `Program.cs` got `public partial class Program;` so the tests can host it.
+- `.github/workflows/ci.yml`: restore, build, test, `scripts/check.sh`, docker build. No secrets. Not run on GitHub yet (nothing pushed).
+- README: "Architecture" section at the top (Mermaid diagram of the 4 projects, CI badge, why a modular monolith).
+- `docs/adr/0001-modular-monolith.md`.
+- `/api/selftest` kept.
+- **Not done on purpose:** merge `refactor/layers` into `main` and push. The instructions for this session say never push, never merge,
+  never touch `main`; the owner reviews first. See [REVIEW.md](REVIEW.md).
+
+## Final state (all on `refactor/layers`, local commits only)
+
+- `dotnet build BacchusLedger.sln`: 0 errors, 0 warnings.
+- `dotnet test`: 81 / 81 passed (Domain 30, Api 51).
+- `scripts/check.ps1` and `scripts/check.sh`: 48 / 48 endpoints identical to the baseline, selftest 81 / 81.
+- `docker compose up --build -d`: works on http://localhost:8081.
+- Reviewer guide: [REVIEW.md](REVIEW.md).
