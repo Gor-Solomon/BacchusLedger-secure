@@ -6,3 +6,6 @@ startup.ConfigureServices(builder.Services);
 var app = builder.Build();
 startup.Configure(app);
 app.Run();
+
+/// Public so the API tests can host the app with WebApplicationFactory.
+public partial class Program;
