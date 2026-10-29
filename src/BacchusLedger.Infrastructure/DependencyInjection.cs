@@ -29,7 +29,7 @@ public static class DependencyInjection
         .AddScoped<ISqliteConnectionFactory, SqliteConnectionFactory>()
         .AddScoped<IUnitOfWork, EfUnitOfWork>()
         .AddScoped<IWineryRepository, EfWineryRepository>()
-        .AddScoped<IBatchRepository, SqliteBatchRepository>()
+        .AddScoped<IBatchRepository, EfBatchRepository>()
         .AddScoped<IVesselRepository, SqliteVesselRepository>()
         .AddScoped<IOperationRepository, SqliteOperationRepository>()
         .AddScoped<IOriginRepository, SqliteOriginRepository>()
