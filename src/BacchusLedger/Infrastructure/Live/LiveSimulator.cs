@@ -6,13 +6,14 @@ using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services;
+using BacchusLedger.Domain.Ranges;
 
 namespace BacchusLedger.Infrastructure.Live;
 
 /// LIVE mode: everything here is SIMULATED, stored only in live_events, and never read by journals, the loss engine or ROI numbers.
 public sealed class LiveSimulator(
     IBatchRepository batches, IVesselRepository vessels, IReadingRepository readings, IOperationRepository operations, ILiveEventRepository events,
-    ISettingsRepository settingsRepository, ILossAnalysisService losses, JsonNode? rangeConfig, int? seed) : ILiveSimulator
+    ISettingsRepository settingsRepository, ILossAnalysisService losses, RangeConfig rangeConfig, int? seed) : ILiveSimulator
 {
     public sealed class VState
     {
@@ -37,7 +38,7 @@ public sealed class LiveSimulator(
         // Range alerts (config/ranges.json)
         public string? Batch { get; set; }
         public string WineColor { get; set; } = "red";
-        public Dictionary<string, Ranges.Range> Ranges { get; } = [];
+        public Dictionary<string, RangeRule> Ranges { get; } = [];
         public RangeTracker Range { get; } = new();
     }
 
@@ -99,9 +100,9 @@ public sealed class LiveSimulator(
             var wineType = b?.WineType ?? await vessels.FirstRealWineTypeAsync(w);
             var vs = Vessels[^1];
             vs.Batch = b?.Code;
-            vs.WineColor = Ranges.WineColor(wineType);
+            vs.WineColor = RangeConfig.WineColorOf(wineType);
             foreach (var m in RangeMetrics)
-                if (Ranges.For(rangeConfig, w, code, m, ferm, vs.WineColor, cap) is { } r) vs.Ranges[m] = r;
+                if (rangeConfig.For(w, code, m, ferm, vs.WineColor, cap) is { } r) vs.Ranges[m] = r;
         }
     }
 
@@ -223,15 +224,15 @@ public sealed class LiveSimulator(
             var (change, dir) = v.Range.Check(m, values.GetValueOrDefault(m), r, v.Capacity, SimTime.ToString("yyyy-MM-ddTHH:mm"));
             if (change == RangeTracker.Change.Fire)
             {
-                var rule = RangeRule(m, dir);
+                var rule = RangeRuleName(m, dir);
                 v.Alerts[rule] = "red";
                 var x = values[m]!.Value;
-                outp.Add(Note(v, "red", rule, $"{v.Name}{(v.Batch != null ? $" ({v.Batch})" : "")}: {m} {dir} — {Ranges.Fmt(x)} {r!.Unit} " +
-                    $"(allowed {Ranges.Fmt(r.Min)}–{Ranges.Fmt(r.Max)} {r.Unit}, {RangeTracker.InARow} readings in a row)."));
+                outp.Add(Note(v, "red", rule, $"{v.Name}{(v.Batch != null ? $" ({v.Batch})" : "")}: {m} {dir} — {RangeRule.Format(x)} {r!.Unit} " +
+                    $"(allowed {RangeRule.Format(r.Min)}–{RangeRule.Format(r.Max)} {r.Unit}, {RangeTracker.InARow} readings in a row)."));
             }
             else if (change == RangeTracker.Change.Clear)
             {
-                v.Alerts.Remove(RangeRule(m, "too high")); v.Alerts.Remove(RangeRule(m, "too low"));
+                v.Alerts.Remove(RangeRuleName(m, "too high")); v.Alerts.Remove(RangeRuleName(m, "too low"));
                 if (v.Alerts.Count == 0) outp.Add(Note(v, "green", "back_normal", $"{v.Name} back to normal."));
             }
         }
@@ -268,7 +269,7 @@ public sealed class LiveSimulator(
     }
 
     /// Rule names: temperature keeps "temp_high" (as before) plus "temp_low"; the others are e.g. "density_low", "level_high".
-    public static string RangeRule(string metric, string dir) => (metric == "temperature" ? "temp" : metric) + (dir == "too low" ? "_low" : "_high");
+    static string RangeRuleName(string metric, string dir) => (metric == "temperature" ? "temp" : metric) + (dir == "too low" ? "_low" : "_high");
 
     public LiveStateDto State() => new(
         On, Scenario, LiveScenarios.Titles[Scenario], SimTime.ToString("yyyy-MM-ddTHH:mm"),

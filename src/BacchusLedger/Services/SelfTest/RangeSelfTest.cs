@@ -1,6 +1,7 @@
 using BacchusLedger.Dataset;
 using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Ranges;
 
 namespace BacchusLedger.Services.SelfTest;
 
@@ -14,22 +15,22 @@ public sealed class RangeSelfTest(IRangeConfigSource rangeConfig, ILiveSimulator
         try
         {
             var cfg = rangeConfig.Config;
-            string R(string metric, bool ferm, string color) => Ranges.For(cfg, "W01", "X-0", metric, ferm, color, 1000) is { } r ? $"{Ranges.Fmt(r.Min)}–{Ranges.Fmt(r.Max)}" : "none";
+            string R(string metric, bool ferm, string color) => new RangeConfig(cfg).For("W01", "X-0", metric, ferm, color, 1000) is { } r ? $"{RangeRule.Format(r.Min)}–{RangeRule.Format(r.Max)}" : "none";
             var act = $"red {R("temperature", true, "red")}, white {R("temperature", true, "white")}, storage {R("temperature", false, "red")}, pH {R("ph", false, "red")}";
             const string exp = "red 20–30, white 12–20, storage 10–18, pH 3–4";
             Add(g, "config/ranges.json defaults (fermenting red/amber, white, storage, pH)", exp, act, act == exp);
-            var amber = Ranges.WineColor("Qvevri amber wine");
-            Add(g, "Qvevri amber wine uses the red fermentation range", "red", amber, amber == "red" && Ranges.WineColor("Classic white wine") == "white");
+            var amber = RangeConfig.WineColorOf("Qvevri amber wine");
+            Add(g, "Qvevri amber wine uses the red fermentation range", "red", amber, amber == "red" && RangeConfig.WineColorOf("Classic white wine") == "white");
 
             var own = System.Text.Json.Nodes.JsonNode.Parse("""{"defaults":{"temperature_fermenting_red":{"min":20,"max":30}},"vessels":{"W01/F-2":{"temperature":{"min":22,"max":28}}}}""");
-            var o = Ranges.For(own, "W01", "F-2", "temperature", true, "red", null);
-            var d = Ranges.For(own, "W01", "F-1", "temperature", true, "red", null);
+            var o = new RangeConfig(own).For("W01", "F-2", "temperature", true, "red", null);
+            var d = new RangeConfig(own).For("W01", "F-1", "temperature", true, "red", null);
             Add(g, "Per-vessel override wins over the default", "F-2 22–28, F-1 20–30",
                 $"F-2 {o?.Min}–{o?.Max}, F-1 {d?.Min}–{d?.Max}", o is { Min: 22, Max: 28 } && d is { Min: 20, Max: 30 });
 
             // 3 in a row, no repeat, clear when back in range; invalid values neither count nor reset
             var t = new RangeTracker();
-            var range = new Ranges.Range(20, 30, "°C", "test");
+            var range = new RangeRule(20, 30, "°C", "test");
             double?[] seq = [31, 31, 25, 31, null, 31, double.NaN, 999, 31, 32, 33, 25, 19, 18, 17];
             var log = seq.Select((v, i) => t.Check("temperature", v, range, null, $"t{i}")).Select(x => x.change == RangeTracker.Change.None ? "." : x.change == RangeTracker.Change.Fire ? "F" : "C").Aggregate("", (a, x) => a + x);
             const string expLog = "........F..C..F";

@@ -27,7 +27,7 @@ public sealed class ReadingService(
         {
             double? b = brix.TryGetValue($"{r.BatchId}/{r.VesselId}", out var br) ? br.Value : null;
             return new ReadingRowDto(r.Id, r.BatchId, r.VesselId, r.TakenAt, r.Type, r.Value, r.Unit, r.Instrument, r.Person, r.Note, r.Source, r.BatchCode, r.VesselCode,
-                r.CellarLabel, r.Winery, ToDto(Calculator.Calculate(r.Type, r.Value, b)), !(r.Note ?? "").StartsWith(SeedDataset.NoTime));
+                r.CellarLabel, r.Winery, ToDto(calculator.Calculate(r.Type, r.Value, b)), !(r.Note ?? "").StartsWith(SeedDataset.NoTime));
         }).ToList();
         var starts = brix.Values.Select(r => new InitialBrixDto(r.BatchId, r.BatchCode, r.VesselCode, r.CellarLabel, r.TakenAt, r.Value,
             new InitialBrix(r.Value).PotentialAbv, Math.Round(new InitialBrix(r.Value).SpecificGravity, 4), r.Source)).ToList();
@@ -115,10 +115,10 @@ public sealed class ReadingService(
     {
         // ABV entered together with density uses the Initial Brix of the same vessel/batch
         double? brix = r.Type == "initial_brix" ? r.Value : await readings.LatestBrixAsync(r.BatchId, r.VesselId);
-        return new ReadingResultDto(id, r.Type, r.Value, ReadingTypes.Units[r.Type], ToDto(Calculator.Calculate(r.Type, r.Value, brix)), warnings, r.Source);
+        return new ReadingResultDto(id, r.Type, r.Value, ReadingTypes.Units[r.Type], ToDto(calculator.Calculate(r.Type, r.Value, brix)), warnings, r.Source);
     }
 
-    static readonly ReadingCalculator Calculator = new();
+    readonly ReadingCalculator calculator = new();
 
     static ReadingCalcDto ToDto(ReadingCalculation c) => new(c.PotentialAbv, c.Sg, c.ProgressPct, c.Formula);
 }
