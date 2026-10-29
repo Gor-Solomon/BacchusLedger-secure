@@ -41,8 +41,11 @@ public static class LossEngine
         public string? Note { get; set; }
         public string? Source { get; set; }
         public string? Person { get; set; }
-        public object? Other { get; set; }
+        public StageComparison? Other { get; set; }
     }
+
+    /// The same stage at the other winery (W01 vs W03).
+    public sealed record StageComparison(string Winery, string Batch, double? LossL, double? LossPct, string Status, string? Source);
 
     public sealed class Check
     {
@@ -208,7 +211,7 @@ public static class LossEngine
             {
                 var m = other.Stages.FirstOrDefault(x => x.StageKey == s.StageKey && x.LossL != null);
                 if (m != null && s.LossL != null)
-                    s.Other = new { winery = other.Winery, batch = other.BatchCode, loss_l = m.LossL, loss_pct = m.LossPct, status = m.Status, source = m.Source };
+                    s.Other = new StageComparison(other.Winery, other.BatchCode, m.LossL, m.LossPct, m.Status, m.Source);
             }
         }
 

@@ -301,8 +301,7 @@ public static class DemoScript
                 var o = St("2026-04-14", "filtration")?.Other;
                 if (o != null)
                 {
-                    dynamic d = o;
-                    did.Insert(did.Count - 1, new($"Comparison: W03 lost {P2((double?)d.loss_pct)}% at the same step → flagged at W03", "Dataset A6.1", (string)d.status == "above" ? "above" : "info"));
+                    did.Insert(did.Count - 1, new($"Comparison: W03 lost {P2(o.LossPct)}% at the same step → flagged at W03", "Dataset A6.1", o.Status == "above" ? "above" : "info"));
                 }
                 break;
             case 11:
@@ -358,8 +357,8 @@ public static class DemoScript
                 "Calculated", Status(s)));
         if (s.Other != null && s.Type != "filtration")
         {
-            dynamic o = s.Other;
-            did.Add(new($"{(string)o.winery} same step: {P2((double?)o.loss_pct)}%", (string?)o.source ?? "Dataset", "info"));
+            var o = s.Other;
+            did.Add(new($"{o.Winery} same step: {P2(o.LossPct)}%", o.Source ?? "Dataset", "info"));
         }
         did.Add(new("Journal 5 (Storage and movement) updated", "Kakheti PDO spec", null));
     }
@@ -420,7 +419,7 @@ public static class DemoScript
                 rec.Add(new("Lab 09.06.2026 · T3-2 · before bottling", "16.1 °C · pH 3.48 · TA 5.7 · RS 2.2", "Dataset A4.2"));
                 if (s != null)
                 {
-                    if (s.Other != null) { dynamic o = s.Other; did.Insert(did.Count - 1, new($"W01 same step: {P2((double?)o.loss_pct)}%", "Dataset A6.2", "info")); }
+                    if (s.Other is { } o) did.Insert(did.Count - 1, new($"W01 same step: {P2(o.LossPct)}%", "Dataset A6.2", "info"));
                 }
                 break;
             }
@@ -434,7 +433,7 @@ public static class DemoScript
                 if (b != null)
                 {
                     did.Add(new($"Loss {N0(b.LossL ?? 0)} L = {P2(b.LossPct)}% vs norm {b.NormPct:0.0#}%{(b.Status == "above" ? $" — ABOVE, excess {b.ExcessL:0.0} L ≈ {Usd((b.ExcessL ?? 0) * vpl)}" : "")}", "Calculated", Status(b)));
-                    if (b.Other != null) { dynamic o = b.Other; did.Add(new($"W01 same step: {P2((double?)o.loss_pct)}%", "Dataset A6.2", "info")); }
+                    if (b.Other is { } o) did.Add(new($"W01 same step: {P2(o.LossPct)}%", "Dataset A6.2", "info"));
                 }
                 did.Add(new("Journal 6 (Bottling) updated", "Kakheti PDO spec", null));
                 break;

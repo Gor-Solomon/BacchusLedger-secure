@@ -1,0 +1,25 @@
+namespace BacchusLedger.Contracts.Batches;
+
+public sealed record BatchSummaryDto(
+    long Id,
+    string? Code,
+    string? Winery,
+    string? Name,
+    string? WineType,
+    string? Technology,
+    string? Variety,
+    long? Vintage,
+    double? Abv,
+    string? Status,
+    double? GrapesKg,
+    string? SourceNote,
+    bool Copy,
+    string? IntakeDate,
+    double? FirstLitres,
+    double LitresNow,
+    double BottledL,
+    int Bottles,
+    double TotalLossL,
+    double LossValueUsd,
+    int Above,
+    int Negative);

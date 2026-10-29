@@ -11,6 +11,11 @@ public static class FeatureServiceCollectionExtensions
     public static IServiceCollection AddOverviewFeature(this IServiceCollection services) =>
         services.AddSingleton<IOverviewService, OverviewService>();
 
+    public static IServiceCollection AddBatchesFeature(this IServiceCollection services) =>
+        services.AddSingleton<IBatchService, BatchService>()
+            .AddSingleton<IOperationService, OperationService>()
+            .AddSingleton<IOriginService, OriginService>();
+
     public static IServiceCollection AddLiveFeature(this IServiceCollection services)
     {
         services.AddSingleton<LiveHub>();

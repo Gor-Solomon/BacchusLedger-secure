@@ -25,6 +25,7 @@ public sealed class Startup
 
         services.AddHealthFeature();
         services.AddOverviewFeature();
+        services.AddBatchesFeature();
         services.AddLiveFeature();
     }
 
