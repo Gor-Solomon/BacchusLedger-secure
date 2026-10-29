@@ -1,5 +1,36 @@
 # Bacchus Ledger
 
+[![CI](https://github.com/Gor-Solomon/BacchusLedger-secure/actions/workflows/ci.yml/badge.svg)](https://github.com/Gor-Solomon/BacchusLedger-secure/actions/workflows/ci.yml)
+
+## Architecture
+
+One app, four projects. Dependencies point inwards only:
+
+```mermaid
+flowchart LR
+    Api["BacchusLedger.Api<br/>Program, Startup, controllers, wwwroot"]
+    App["BacchusLedger.Application<br/>services, contracts, repository and provider interfaces"]
+    Infra["BacchusLedger.Infrastructure<br/>SQLite repositories, seeder, AI providers, live simulator"]
+    Domain["BacchusLedger.Domain<br/>calibration, losses, fermentation, ranges, ledger, hash chain"]
+    Api --> App
+    Api --> Infra
+    Infra --> App
+    Infra --> Domain
+    App --> Domain
+```
+
+- **Controllers** (one per feature) validate the input, call one service method and return a named record.
+- **Services** hold the use cases; **repositories** hold all SQL; **domain** classes are pure calculations (no SQL, HTTP or files).
+- Tests: `tests/BacchusLedger.Domain.Tests` (calculations) and `tests/BacchusLedger.Api.Tests` (endpoints, selftest, every JSON endpoint against `docs/refactor/baseline`).
+- `scripts/check.ps1` / `scripts/check.sh` start the app on a fresh database and compare all JSON endpoints with the baseline.
+
+### Why a modular monolith, not microservices
+
+A small team, one SQLite database and offline use in a cellar: one process and one container are simpler and more reliable.
+The record is sealed with a hash chain over rows of several tables, which needs one database and one transaction.
+The feature boundaries (controller + service + repositories per feature, behind interfaces) are ready to be split into
+services later if real load ever needs it. See [docs/adr/0001-modular-monolith.md](docs/adr/0001-modular-monolith.md).
+
 Built for the WINECUBATOR wine hackathon (Georgia). It keeps one cellar record from farmer to bottle: every kg and every litre is linked (farmer → plot → delivery → batch → tank/qvevri → bottle). It shows the litres and the loss at every step and fills the 8 Kakheti PDO journals. Works offline, with no sensors.
 
 ## Run

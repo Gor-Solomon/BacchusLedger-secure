@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore BacchusLedger.sln
+
+      - name: Build
+        run: dotnet build BacchusLedger.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test BacchusLedger.sln --no-build -c Release
+
+      - name: API snapshots identical to the baseline
+        run: bash scripts/check.sh
+
+      - name: Docker build
+        run: docker build -t bacchus-secure:ci .
