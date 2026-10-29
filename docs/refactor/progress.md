@@ -8,7 +8,7 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 | 2 | Program + Startup + controllers + services (one project) | done |
 | 3 | Repositories + remove static infrastructure | done |
 | 4 | Domain classes (pure logic) | done |
-| 5 | Split into Domain, Application, Infrastructure and Api projects | todo |
+| 5 | Split into Domain, Application, Infrastructure and Api projects | done |
 | 6 | Tests, CI, docs, merge | todo |
 
 ## Step 1 notes
@@ -75,3 +75,18 @@ One commit per calculator, each with build + `check.ps1` + write replay passing.
 | `AnswerGuard` | `Assistant/AnswerTextExtensions` (`UsesOnlyNumbersFrom`, `SourceTags`) |
 
 `LossEngine`, `Calibration`, `Readings`, `Ranges`, `Report`, `Money`, `Fmt` files are gone.
+
+## Step 5 notes
+
+- Projects: `src/BacchusLedger.Domain` (no references), `src/BacchusLedger.Application` (Domain + Microsoft.Extensions abstractions),
+  `src/BacchusLedger.Infrastructure` (Application + Domain, ASP.NET Core shared framework, Microsoft.Data.Sqlite, QRCoder),
+  `src/BacchusLedger.Api` (Application + Infrastructure; wwwroot, knowledge/, config/ copied to the output).
+- Namespaces follow the folders: `BacchusLedger.Domain.*`, `BacchusLedger.Application.*`, `BacchusLedger.Infrastructure.*`, `BacchusLedger.Api.*`.
+  The old `Dataset/` (seed data and setting defaults) is now `BacchusLedger.Domain.Dataset`.
+- `AddApplication()` (Application/DependencyInjection.cs, one method per feature) and `AddInfrastructure()` (Infrastructure/DependencyInjection.cs)
+  are called from Startup; the options are bound in Startup (rule 14), so `AddInfrastructure` takes no configuration parameter.
+- Before the split, QR code generation (`IQrCodeRenderer`) and calls to our own API (`ILocalApiClient`) were put behind interfaces,
+  so Application needs neither QRCoder nor `IHttpClientFactory`.
+- Dockerfile restores/publishes `BacchusLedger.Api.csproj`; ENTRYPOINT is `BacchusLedger.Api.dll`. Same port, volume and env variables.
+  `.dockerignore` now keeps `src/BacchusLedger.Api/knowledge/*.md`.
+- `scripts/check.ps1` / `check.sh` default to `src/BacchusLedger.Api`. README local-run path updated.

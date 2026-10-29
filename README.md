@@ -34,7 +34,7 @@ The demo players re-create their own copies (`W01-B1-2025-DEMO`, `W03-B3-2025-DE
 ### Local run without Docker (.NET 8 SDK)
 
 ```
-cd src/BacchusLedger
+cd src/BacchusLedger.Api
 DB_PATH=../../data/bacchus.db dotnet run --urls http://localhost:8080
 ```
 
