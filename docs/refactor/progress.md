@@ -1,6 +1,6 @@
 # Refactor progress
 
-Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local commits only, nothing pushed, `main` untouched).
+Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Steps 1–6: branch `refactor/layers` (now merged into `main` by the owner). Step 7: branch `refactor/ef-core` (local commits only, nothing pushed, `main` untouched).
 
 | Step | What | Status |
 |------|------|--------|
@@ -9,7 +9,8 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 | 3 | Repositories + remove static infrastructure | done |
 | 4 | Domain classes (pure logic) | done |
 | 5 | Split into Domain, Application, Infrastructure and Api projects | done |
-| 6 | Tests, CI, docs, merge | done, except the merge into `main` and the push (not allowed in this session) |
+| 6 | Tests, CI, docs, merge | done (the owner merged it into `main`) |
+| 7 | Persistence on EF Core (DbContext, migrations, LINQ repositories) | done |
 
 ## Step 1 notes
 
@@ -114,3 +115,30 @@ One commit per calculator, each with build + `check.ps1` + write replay passing.
 - `scripts/check.ps1` and `scripts/check.sh`: 48 / 48 endpoints identical to the baseline, selftest 81 / 81.
 - `docker compose up --build -d`: works on http://localhost:8081.
 - Reviewer guide: [REVIEW.md](REVIEW.md).
+
+## Step 7 notes (EF Core)
+
+Branch `refactor/ef-core` from `main`. Reviewer guide: [REVIEW-EF.md](REVIEW-EF.md). Decision record: [../adr/0002-ef-core.md](../adr/0002-ef-core.md).
+
+Order of commits (each one: build 0 warnings, `dotnet test`, `scripts/check.ps1`, write-request replay):
+1. EF Core packages (`Microsoft.EntityFrameworkCore.Sqlite` / `.Design` 8.0.11, Infrastructure only; `dotnet-ef` 8.0.11 local tool),
+   `BacchusLedgerDbContext`, 21 entities, 21 configurations, migration `InitialSchema` (+ triggers), `MigrateAsync` + baseline of old
+   databases in `DatabaseInitializer`, `EfUnitOfWork`, scoped lifetimes, live simulator with a DI scope per step. The old SQL repositories ran
+   on the DbContext's connection and transaction (a temporary bridge) until each one was converted.
+2. One commit per repository: Winery, Settings, Batch, Vessel, Operation, Lab, Reading, LiveEvent, Origin, Demo, Maintenance, Seal, Journal, Diagnostics.
+3. No N+1: `AnalyzeManyAsync` + "many batches" repository methods (overview, batch list, vessels, cellar, journals 5/6, assistant, simulator).
+4. Cleanup: `SqliteSession`, `SqliteRow`, `RecordFilter`, `ISqliteConnectionFactory`, `SqliteConnectionFactory`, `SqliteUnitOfWork`, all
+   `EnsureTablesAsync` deleted.
+5. Tests: `WritePathTests` (API: operation, reading, append-only update/delete blocked, demo run + reset, seal / tamper / verify) and the new
+   `tests/BacchusLedger.Infrastructure.Tests` (migration on an empty database, initializer seed, old-schema database baseline, reset, seal compatibility).
+6. EF Core logs at Warning; ADR 0002, README "Architecture" (EF Core, migrations, how to add a migration), REVIEW-EF.md.
+
+Nothing had to be undone; no repository was skipped.
+
+Proofs of compatibility:
+- Schema of a fresh migration compared with a database made by `main`: same columns (type, NOT NULL, default, key), unique keys, foreign keys, CHECKs, triggers.
+- A database made by the `main` build (with writes and 3 seals): opened, baselined, all data kept, 3 / 3 seals verified, same selftest result as `main`.
+- The Docker volume `bacchus-secure-data`: counts, overview and all 7 seals (same final hashes) identical before and after the upgrade.
+
+Final state: build 0 errors / 0 warnings; tests 98 / 98 (Domain 30, Infrastructure 8, Api 60); `check.ps1` 48 / 48 identical, selftest 81 / 81;
+Docker on http://localhost:8081.

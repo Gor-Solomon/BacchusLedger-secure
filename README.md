@@ -10,7 +10,7 @@ One app, four projects. Dependencies point inwards only:
 flowchart LR
     Api["BacchusLedger.Api<br/>Program, Startup, controllers, wwwroot"]
     App["BacchusLedger.Application<br/>services, contracts, repository and provider interfaces"]
-    Infra["BacchusLedger.Infrastructure<br/>SQLite repositories, seeder, AI providers, live simulator"]
+    Infra["BacchusLedger.Infrastructure<br/>EF Core (SQLite) DbContext, migrations, repositories, seeder, AI providers, live simulator"]
     Domain["BacchusLedger.Domain<br/>calibration, losses, fermentation, ranges, ledger, hash chain"]
     Api --> App
     Api --> Infra
@@ -20,9 +20,27 @@ flowchart LR
 ```
 
 - **Controllers** (one per feature) validate the input, call one service method and return a named record.
-- **Services** hold the use cases; **repositories** hold all SQL; **domain** classes are pure calculations (no SQL, HTTP or files).
-- Tests: `tests/BacchusLedger.Domain.Tests` (calculations) and `tests/BacchusLedger.Api.Tests` (endpoints, selftest, every JSON endpoint against `docs/refactor/baseline`).
+- **Services** hold the use cases; **repositories** hold all database access; **domain** classes are pure calculations (no SQL, HTTP or files).
+- **Persistence: EF Core 8 on SQLite**, in the Infrastructure project only. `BacchusLedgerDbContext` with one entity and one
+  `IEntityTypeConfiguration` per table (the original snake_case names). Repositories use LINQ (`AsNoTracking` for reads);
+  `IUnitOfWork` wraps the DbContext transaction. Raw SQL is left only for the append-only triggers (in the migration) and two
+  selftest diagnostics; see [docs/adr/0002-ef-core.md](docs/adr/0002-ef-core.md).
+- **Migrations** run at start (`Database.MigrateAsync()`). A database made before EF Core is kept and recorded as `InitialSchema`.
+  `RESET_ON_START=true` (or Settings → Reset demo data) migrates down and up again and re-seeds.
+- Tests: `tests/BacchusLedger.Domain.Tests` (calculations), `tests/BacchusLedger.Infrastructure.Tests` (migration, old-database baseline,
+  reset, seal compatibility) and `tests/BacchusLedger.Api.Tests` (endpoints, write paths, selftest, every JSON endpoint against `docs/refactor/baseline`).
 - `scripts/check.ps1` / `scripts/check.sh` start the app on a fresh database and compare all JSON endpoints with the baseline.
+
+### Adding a migration
+
+Change an entity and its configuration in `src/BacchusLedger.Infrastructure/Persistence/`, then:
+
+```
+dotnet tool restore                      # dotnet-ef 8 (local tool, see dotnet-tools.json)
+dotnet ef migrations add <Name> -p src/BacchusLedger.Infrastructure -o Persistence/Migrations
+```
+
+The app applies it at the next start. Keep table and column names snake_case (`HasColumnName`), and put triggers in the migration with `migrationBuilder.Sql(...)`.
 
 ### Why a modular monolith, not microservices
 

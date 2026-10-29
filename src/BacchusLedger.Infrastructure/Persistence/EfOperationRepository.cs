@@ -19,15 +19,19 @@ public sealed class EfOperationRepository(BacchusLedgerDbContext db) : IOperatio
     IQueryable<OperationWithBatch> WithVessels(IQueryable<OperationEntity> operations) =>
         from o in operations
         from vf in db.Vessels.Where(v => v.Id == o.FromVesselId).DefaultIfEmpty()
-         from vt in db.Vessels.Where(v => v.Id == o.ToVesselId).DefaultIfEmpty()
-         orderby o.Date, o.Id
-         select new OperationWithBatch { BatchId = o.BatchId ?? 0, Op = new CellarOperation
-         {
-             Id = o.Id, Date = o.Date!, Type = o.Type!, FromId = o.FromVesselId, ToId = o.ToVesselId,
-             FromCode = vf.Code, ToCode = vt.Code, FromLabel = vf.CellarLabel, ToLabel = vt.CellarLabel,
-             Litres = o.Litres, Bottles = (int?)o.Bottles, Ml = o.BottleMl, Remainder = o.RemainderL, Dip = o.DipCm,
-             Method = o.Method, Note = o.Note, Source = o.Source, Person = o.Person,
-         } };
+        from vt in db.Vessels.Where(v => v.Id == o.ToVesselId).DefaultIfEmpty()
+        orderby o.Date, o.Id
+        select new OperationWithBatch
+        {
+            BatchId = o.BatchId ?? 0,
+            Op = new CellarOperation
+            {
+                Id = o.Id, Date = o.Date!, Type = o.Type!, FromId = o.FromVesselId, ToId = o.ToVesselId,
+                FromCode = vf.Code, ToCode = vt.Code, FromLabel = vf.CellarLabel, ToLabel = vt.CellarLabel,
+                Litres = o.Litres, Bottles = (int?)o.Bottles, Ml = o.BottleMl, Remainder = o.RemainderL, Dip = o.DipCm,
+                Method = o.Method, Note = o.Note, Source = o.Source, Person = o.Person,
+            },
+        };
 
     public async Task<long> InsertAsync(NewOperation o) => (await db.InsertAsync(new OperationEntity
     {
