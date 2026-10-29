@@ -32,7 +32,7 @@ public static class DependencyInjection
         .AddScoped<IBatchRepository, EfBatchRepository>()
         .AddScoped<IVesselRepository, EfVesselRepository>()
         .AddScoped<IOperationRepository, EfOperationRepository>()
-        .AddScoped<IOriginRepository, SqliteOriginRepository>()
+        .AddScoped<IOriginRepository, EfOriginRepository>()
         .AddScoped<ILabRepository, EfLabRepository>()
         .AddScoped<IReadingRepository, EfReadingRepository>()
         .AddScoped<ISettingsRepository, EfSettingsRepository>()
