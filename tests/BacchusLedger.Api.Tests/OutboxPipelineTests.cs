@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using BacchusLedger.Application.Events;
 using BacchusLedger.Application.Messaging;
+using BacchusLedger.Application.Providers;
 using BacchusLedger.Application.Services;
 using BacchusLedger.Infrastructure.Outbox;
 using BacchusLedger.Infrastructure.Persistence;
@@ -48,9 +49,11 @@ public class OutboxPipelineTests
     }
 
     [Fact]
-    public async Task A_sensor_reading_and_its_event_are_saved_and_the_worker_pushes_it_to_the_live_stream()
+    public async Task Sensor_readings_above_the_range_are_saved_and_the_worker_raises_a_real_notification()
     {
-        using var f = new ApiFactory(null, Fast);
+        // F-2 may hold at most 5,000 L here; a 100 cm dip is 7,894 L, so every reading is "too high"
+        using var f = new ApiFactory(null, Fast, s => s.AddSingleton<IRangeConfigSource>(new FixedRanges(
+            """{"defaults":{"level":{"min":0,"max":"capacity"}},"vessels":{"W01/F-2":{"level":{"min":0,"max":5000}}}}""")));
         var client = f.CreateClient();
         var sse = Listen(f);
         var before = await Db(f, db => db.SensorReadings.CountAsync());
@@ -66,6 +69,32 @@ public class OutboxPipelineTests
         Assert.Contains("\"vessel_code\":\"F-2\"", pushed);
         Assert.Contains("\"source\":\"SENSOR\"", pushed);
         Assert.Equal(1, await Db(f, db => db.ProcessedMessages.CountAsync(p => p.MessageId == message.Id && p.Handler == "LiveStreamHandler")));
+        Assert.Equal(1, await Db(f, db => db.ProcessedMessages.CountAsync(p => p.MessageId == message.Id && p.Handler == "RangeRulesHandler")));
+
+        // like the simulator's range alerts: one red alert after 3 readings in a row out of range
+        Assert.Empty((await client.GetFromJsonAsync<JsonArray>("/api/live/events?kind=notification"))!);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/sensors/reading", Dip)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/sensors/reading", Dip)).StatusCode);
+        await Until(async () => (await client.GetFromJsonAsync<JsonArray>("/api/live/events?kind=notification"))!.Count > 0, "sensor notification");
+
+        var note = Assert.Single((await client.GetFromJsonAsync<JsonArray>("/api/live/events?kind=notification"))!)!;
+        Assert.Equal("red", (string?)note["level"]);
+        Assert.Equal("level_high", (string?)note["rule"]);
+        Assert.Equal("SENSOR", (string?)note["source"]);
+        Assert.Equal("F-2", (string?)note["vessel_code"]);
+        Assert.Equal("F-2: level too high — 7894 L (allowed 0–5000 L, 3 readings in a row).", (string?)note["message"]);
+        await Until(() => Task.FromResult(sse().Any(m => m.StartsWith("event: tick") && m.Contains("\"rule\":\"level_high\""))), "notification on the live stream");
+        Assert.Single(await Messages(f, nameof(RangeAlertRaised)));
+
+        // a fourth reading still out of range does not repeat the alert
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/sensors/reading", Dip)).StatusCode);
+        await Until(async () => (await Messages(f, nameof(SensorReadingReceived))).All(m => m.Status == OutboxStatus.Processed), "all processed");
+        Assert.Single((await client.GetFromJsonAsync<JsonArray>("/api/live/events?kind=notification"))!);
+    }
+
+    sealed class FixedRanges(string json) : IRangeConfigSource
+    {
+        public JsonNode? Config { get; } = JsonNode.Parse(json);
     }
 
     [Fact]

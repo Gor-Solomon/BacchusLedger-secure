@@ -159,6 +159,9 @@ Order of commits (each one: build 0 warnings, `dotnet test`, `scripts/check.ps1`
 6. Tests: 6 unit tests (Infrastructure) and 5 integration tests (Api).
 7. Docs: ADR 0003, README "Event pipeline", REVIEW-OUTBOX.md, this file.
 
+Follow-up commit: `RangeRulesHandler` also handles `SensorReadingReceived` (range rules on sensor readings, own alert state, tagged SENSOR);
+test (a) now shows a real notification after 3 readings above the range.
+
 Nothing had to be undone. Final checks: build 0 errors / 0 warnings; tests 109 / 109 (Domain 30, Infrastructure 14, Api 65);
 `check.ps1` 48 / 48 identical, selftest 81 / 81; Docker on http://localhost:8081 with the existing volume (data and 7 / 7 seals identical,
 migration applied); browser: Live alerts as before, `OUTBOX_FAIL_RATE=0.5` shows retries and failed messages, set back to 0.

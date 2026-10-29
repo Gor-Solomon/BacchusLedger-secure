@@ -26,7 +26,8 @@ Use a **transactional outbox** inside the same app (no message broker):
    commit that added messages.
 3. `InProcessMessagePublisher` → `IEventDispatcher` finds the handlers in DI (`IEventHandler<TEvent>`) and runs each one in its
    own transaction together with a `processed_messages` row, so **a handler never runs twice for the same message**.
-   - `RangeRulesHandler`: the existing live alert rules → notifications in `live_events` + `RangeAlertRaised` (itself an outbox event).
+   - `RangeRulesHandler`: the existing live alert rules on simulated readings, and the range rules on sensor readings (their own
+     alert state) → notifications in `live_events` + `RangeAlertRaised` (itself an outbox event).
    - `LiveStreamHandler`: pushes `sensor` and `tick` messages to the SSE hub, exactly as the UI already expects them.
 4. A failed message is retried with exponential backoff (1 s, 2 s, 4 s, 8 s …). After `Outbox:MaxAttempts` (5) it becomes `failed`
    (the dead-letter). Every failure is logged. `POST /api/outbox/failed/{id}/retry` puts it back to pending.

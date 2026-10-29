@@ -18,7 +18,7 @@ worker handles the event later, with retries, a dead-letter and no double work. 
 | Producer | `LiveBoardService.SensorReadingAsync`, `LiveSimulatorHost.TickAsync` | Reading + event in one transaction. The simulator no longer runs the rules or pushes SSE itself. |
 | Worker | `Infrastructure/Outbox/OutboxProcessor` (hosted service) → `Application/Messaging/OutboxBatchProcessor` | Polls every 1 s (woken at once by a commit), a new DI scope per round, oldest first, order per vessel, backoff, dead-letter, graceful stop. |
 | Dispatcher | `EventDispatcher`, `OutboxEventTypes` | Finds `IEventHandler<TEvent>` in DI; each handler runs in its own transaction with its `processed_messages` row. |
-| Handlers | `Application/Handlers/` | `RangeRulesHandler` (today's alert rules → notifications + `RangeAlertRaised`), `LiveStreamHandler` (SSE `sensor` / `tick`). |
+| Handlers | `Application/Handlers/` | `RangeRulesHandler` (today's alert rules on simulated readings, range rules on sensor readings → notifications + `RangeAlertRaised`), `LiveStreamHandler` (SSE `sensor` / `tick`). |
 | Publisher | `IMessagePublisher`, `InProcessMessagePublisher` | The one place a broker would plug in. |
 | Visibility | `OutboxController`, `OutboxService`, `live.js` | `GET /api/outbox/stats`, `GET /api/outbox/failed`, `POST /api/outbox/failed/{id}/retry`; "Event pipeline" card on the Live board, Expert mode only. |
 | Demo switch | `OutboxOptions.FailRate` ← env `OUTBOX_FAIL_RATE` (docker-compose default 0) | Handlers fail at random before they run, to show retries and the dead-letter. |
@@ -117,17 +117,20 @@ New tests:
   backoff 1 / 2 / 4 / 8 / 16 s, dead-letter after 5 attempts (and retry), idempotency (dispatched twice → handler runs once),
   order per vessel, enqueue without a transaction is refused.
 - Integration (`tests/BacchusLedger.Api.Tests/OutboxPipelineTests.cs`, real app on a real SQLite file):
-  a) sensor reading → reading + outbox row → processed → SSE `sensor`; plus hot fermentation → `temp_high` notification through the worker;
+  a) sensor readings above the range → reading + outbox row → processed → SSE `sensor`, and after 3 in a row a real red `level_high`
+     notification (SENSOR) in live_events and on the stream, not repeated on the 4th; plus hot fermentation → `temp_high` through the worker;
   b) failing handler → reading kept, 5 attempts, failed; retry endpoint → processed, the other handler did not run again;
   c) crash safety: messages written with the worker removed are processed when the app starts again on the same file;
   d) the outbox row cannot be saved (duplicate key) → the reading and its live event are not saved either.
 
 ## Skipped, different from the request, or worth knowing
 
-1. **Sensor readings do not run the alert rules.** They never did (the rules only run on simulated readings), and the hard rule was
-   "all existing behaviour stays the same". So `RangeRulesHandler` handles `LiveReadingSimulated` only; for a sensor reading "the
-   notification" in test (a) is the SSE `sensor` message, and the alert path is tested with the simulator. Adding
-   `IEventHandler<SensorReadingReceived>` to `RangeRulesHandler` is a small change if the owner wants it.
+1. **Sensor readings now run the range rules (new, asked for by the owner after the first review).** `RangeRulesHandler` also handles
+   `SensorReadingReceived`: the level from the dip is checked against config/ranges.json (3 in a row out of range → one red alert,
+   green "back to normal" when back in range), tagged **SENSOR**. The alert state for sensors (`SensorRangeRules`) is kept apart
+   from the simulator's, so real and simulated readings never count towards each other's alerts. With the default ranges
+   (0 L – capacity) a dip cannot be out of range; a per-vessel override in ranges.json can make it so (test (a) does this).
+   The UI's toast and feed still show the purple SIMULATED chip on every live notification, also on SENSOR ones (UI unchanged).
 2. **One event per vessel per simulator step** (not one per tick), so the order per vessel means something. The UI therefore gets
    up to 3 `tick` messages per step instead of 1, and a notification arrives as its own `tick` right after the readings
    (same toast, bell and feed). The SSE message names and JSON shapes are unchanged.
