@@ -8,13 +8,6 @@ public sealed class SqliteSealRepository(ISqliteConnectionFactory connections) :
     /// Chain order: vineyard deliveries first, then the cellar record.
     static readonly string[] EntryTables = ["deliveries", "operations", "lab", "readings"];
 
-    public Task EnsureTablesAsync() => Exec("""
-        CREATE TABLE IF NOT EXISTS seal_chain(batch_id INTEGER, seq INTEGER, tbl TEXT, row_id INTEGER, prev_hash TEXT, hash TEXT, PRIMARY KEY(batch_id, seq));
-        CREATE TABLE IF NOT EXISTS seal_meta(key TEXT PRIMARY KEY, value TEXT);
-        CREATE TABLE IF NOT EXISTS seal_tamper(tbl TEXT, row_id INTEGER, col TEXT, old_value REAL, batch_id INTEGER);
-        CREATE TABLE IF NOT EXISTS seal_batch(batch_id INTEGER PRIMARY KEY, batch_code TEXT, final_hash TEXT, signature TEXT, sealed_at TEXT, entries INTEGER, key_id TEXT);
-        """);
-
     public async Task<string?> GetVersionAsync()
     {
         await using var db = await connections.OpenAsync();

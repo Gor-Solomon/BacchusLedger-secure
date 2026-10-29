@@ -1,54 +1,15 @@
-using BacchusLedger.Application.Options;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BacchusLedger.Infrastructure.Persistence;
 
-public sealed class SqliteConnectionFactory(IOptions<StorageOptions> options) : ISqliteConnectionFactory
+/// Temporary bridge while the repositories move to EF Core: hand-written SQL runs on the same connection and transaction as the DbContext.
+public sealed class SqliteConnectionFactory(BacchusLedgerDbContext db) : ISqliteConnectionFactory
 {
-    readonly SemaphoreSlim writeLock = new(1, 1);
-    readonly AsyncLocal<SqliteSession?> current = new();
-
-    public async Task<SqliteSession> OpenAsync() => current.Value ?? new(await OpenConnectionAsync(), null, owned: true);
-
-    public async Task RunExclusiveAsync(Func<SqliteSession, Task> work)
+    public async Task<SqliteSession> OpenAsync()
     {
-        await writeLock.WaitAsync();
-        try
-        {
-            await using var session = new SqliteSession(await OpenConnectionAsync(), null, owned: true);
-            await work(session);
-        }
-        finally { writeLock.Release(); }
-    }
-
-    public async Task<T> RunInTransactionAsync<T>(Func<Task<T>> work, bool commit)
-    {
-        if (current.Value != null && commit) return await work();
-        await writeLock.WaitAsync();
-        try
-        {
-            await using var connection = await OpenConnectionAsync();
-            await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync();
-            current.Value = new SqliteSession(connection, tx, owned: false);
-            try
-            {
-                var result = await work();
-                if (commit) await tx.CommitAsync(); else await tx.RollbackAsync();
-                return result;
-            }
-            finally { current.Value = null; }
-        }
-        finally { writeLock.Release(); }
-    }
-
-    async Task<SqliteConnection> OpenConnectionAsync()
-    {
-        var c = new SqliteConnection($"Data Source={options.Value.DbPath}");
-        await c.OpenAsync();
-        await using var cmd = c.CreateCommand();
-        cmd.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
-        await cmd.ExecuteNonQueryAsync();
-        return c;
+        await db.Database.OpenConnectionAsync();
+        return new SqliteSession((SqliteConnection)db.Database.GetDbConnection(), db.Database.CurrentTransaction?.GetDbTransaction() as SqliteTransaction, owned: false);
     }
 }

@@ -6,7 +6,11 @@ using BacchusLedger.Infrastructure.Ai;
 using BacchusLedger.Infrastructure.Live;
 using BacchusLedger.Infrastructure.Persistence;
 using BacchusLedger.Infrastructure.Providers;
+using BacchusLedger.Application.Options;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace BacchusLedger.Infrastructure;
 
@@ -20,24 +24,30 @@ public static class DependencyInjection
         .AddLiveSimulator();
 
     public static IServiceCollection AddPersistence(this IServiceCollection services) => services
-        .AddSingleton<ISqliteConnectionFactory, SqliteConnectionFactory>()
-        .AddSingleton<IUnitOfWork, SqliteUnitOfWork>()
-        .AddSingleton<IWineryRepository, SqliteWineryRepository>()
-        .AddSingleton<IBatchRepository, SqliteBatchRepository>()
-        .AddSingleton<IVesselRepository, SqliteVesselRepository>()
-        .AddSingleton<IOperationRepository, SqliteOperationRepository>()
-        .AddSingleton<IOriginRepository, SqliteOriginRepository>()
-        .AddSingleton<ILabRepository, SqliteLabRepository>()
-        .AddSingleton<IReadingRepository, SqliteReadingRepository>()
-        .AddSingleton<ISettingsRepository, SqliteSettingsRepository>()
-        .AddSingleton<ILiveEventRepository, SqliteLiveEventRepository>()
-        .AddSingleton<IDemoRepository, SqliteDemoRepository>()
-        .AddSingleton<IMaintenanceRepository, SqliteMaintenanceRepository>()
-        .AddSingleton<ISealRepository, SqliteSealRepository>()
-        .AddSingleton<IJournalRepository, SqliteJournalRepository>()
-        .AddSingleton<IDiagnosticsRepository, SqliteDiagnosticsRepository>()
-        .AddSingleton<DatabaseSeeder>()
-        .AddSingleton<IDatabaseInitializer, DatabaseInitializer>();
+        .AddDbContext<BacchusLedgerDbContext>((sp, o) => o.UseSqlite(ConnectionString(sp.GetRequiredService<IOptions<StorageOptions>>().Value.DbPath)))
+        .AddSingleton<SqliteWriteGate>()
+        .AddScoped<ISqliteConnectionFactory, SqliteConnectionFactory>()
+        .AddScoped<IUnitOfWork, EfUnitOfWork>()
+        .AddScoped<IWineryRepository, SqliteWineryRepository>()
+        .AddScoped<IBatchRepository, SqliteBatchRepository>()
+        .AddScoped<IVesselRepository, SqliteVesselRepository>()
+        .AddScoped<IOperationRepository, SqliteOperationRepository>()
+        .AddScoped<IOriginRepository, SqliteOriginRepository>()
+        .AddScoped<ILabRepository, SqliteLabRepository>()
+        .AddScoped<IReadingRepository, SqliteReadingRepository>()
+        .AddScoped<ISettingsRepository, SqliteSettingsRepository>()
+        .AddScoped<ILiveEventRepository, SqliteLiveEventRepository>()
+        .AddScoped<IDemoRepository, SqliteDemoRepository>()
+        .AddScoped<IMaintenanceRepository, SqliteMaintenanceRepository>()
+        .AddScoped<ISealRepository, SqliteSealRepository>()
+        .AddScoped<IJournalRepository, SqliteJournalRepository>()
+        .AddScoped<IDiagnosticsRepository, SqliteDiagnosticsRepository>()
+        .AddScoped<DatabaseSeeder>()
+        .AddScoped<IDatabaseInitializer, DatabaseInitializer>();
+
+    /// Same SQLite settings as before: foreign keys on, wait up to 5 s for a lock (was PRAGMA busy_timeout=5000), default journal mode.
+    static string ConnectionString(string dbPath) =>
+        new SqliteConnectionStringBuilder { DataSource = dbPath, ForeignKeys = true, DefaultTimeout = 5 }.ToString();
 
     public static IServiceCollection AddProviders(this IServiceCollection services)
     {
@@ -61,7 +71,7 @@ public static class DependencyInjection
     public static IServiceCollection AddLiveSimulator(this IServiceCollection services)
     {
         services.AddSingleton<ILiveHub, LiveHub>();
-        services.AddSingleton<ILiveSimulatorFactory, LiveSimulatorFactory>();
+        services.AddScoped<ILiveSimulatorFactory, LiveSimulatorFactory>();
         services.AddSingleton<LiveSimulatorHost>();
         services.AddSingleton<ILiveControl>(sp => sp.GetRequiredService<LiveSimulatorHost>());
         services.AddHostedService(sp => sp.GetRequiredService<LiveSimulatorHost>());

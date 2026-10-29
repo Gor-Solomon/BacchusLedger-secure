@@ -5,7 +5,6 @@ namespace BacchusLedger.Application.Repositories;
 /// Hash chain and seal per batch, plus the demo tamper log.
 public interface ISealRepository
 {
-    Task EnsureTablesAsync();
     Task<string?> GetVersionAsync();
     Task SetVersionAsync(string version);
 

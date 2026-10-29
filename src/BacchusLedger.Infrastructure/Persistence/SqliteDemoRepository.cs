@@ -4,12 +4,6 @@ namespace BacchusLedger.Infrastructure.Persistence;
 
 public sealed class SqliteDemoRepository(ISqliteConnectionFactory connections) : IDemoRepository
 {
-    public async Task EnsureTablesAsync()
-    {
-        await using var db = await connections.OpenAsync();
-        await db.ExecAsync("CREATE TABLE IF NOT EXISTS demo_rows(script TEXT, tbl TEXT, row_id INTEGER)");
-    }
-
     public async Task<HashSet<long>> DoneStepsAsync(string script)
     {
         await using var db = await connections.OpenAsync();

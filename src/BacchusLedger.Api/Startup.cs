@@ -55,8 +55,11 @@ public sealed class Startup(IConfiguration configuration)
     public void Configure(WebApplication app)
     {
         var storage = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
-        app.Services.GetRequiredService<IDatabaseInitializer>().InitializeAsync(storage.ResetOnStart).GetAwaiter().GetResult();
-        app.Services.GetRequiredService<ISealService>().SealAllAsync().GetAwaiter().GetResult(); // hash chain + DEMO signature for every batch
+        using (var scope = app.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>().InitializeAsync(storage.ResetOnStart).GetAwaiter().GetResult();
+            scope.ServiceProvider.GetRequiredService<ISealService>().SealAllAsync().GetAwaiter().GetResult(); // hash chain + DEMO signature for every batch
+        }
 
         app.UseDefaultFiles();
         app.UseStaticFiles();

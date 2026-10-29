@@ -24,57 +24,57 @@ public static class DependencyInjection
         .AddSelfTestFeature();
 
     public static IServiceCollection AddHealthFeature(this IServiceCollection services) =>
-        services.AddSingleton<IHealthService, HealthService>();
+        services.AddScoped<IHealthService, HealthService>();
 
     public static IServiceCollection AddOverviewFeature(this IServiceCollection services) =>
-        services.AddSingleton<IOverviewService, OverviewService>();
+        services.AddScoped<IOverviewService, OverviewService>();
 
     public static IServiceCollection AddBatchesFeature(this IServiceCollection services) => services
-        .AddSingleton<ILossAnalysisService, LossAnalysisService>()
-        .AddSingleton<IDatasetWriter, DatasetWriter>()
-        .AddSingleton<IBatchService, BatchService>()
-        .AddSingleton<IOperationService, OperationService>()
-        .AddSingleton<IOriginService, OriginService>();
+        .AddScoped<ILossAnalysisService, LossAnalysisService>()
+        .AddScoped<IDatasetWriter, DatasetWriter>()
+        .AddScoped<IBatchService, BatchService>()
+        .AddScoped<IOperationService, OperationService>()
+        .AddScoped<IOriginService, OriginService>();
 
     public static IServiceCollection AddVesselsFeature(this IServiceCollection services) => services
-        .AddSingleton<IVesselService, VesselService>()
-        .AddSingleton<ICellarService, CellarService>();
+        .AddScoped<IVesselService, VesselService>()
+        .AddScoped<ICellarService, CellarService>();
 
     public static IServiceCollection AddReadingsFeature(this IServiceCollection services) =>
-        services.AddSingleton<IReadingService, ReadingService>();
+        services.AddScoped<IReadingService, ReadingService>();
 
     public static IServiceCollection AddJournalsFeature(this IServiceCollection services) =>
-        services.AddSingleton<IJournalService, JournalService>();
+        services.AddScoped<IJournalService, JournalService>();
 
     public static IServiceCollection AddReportFeature(this IServiceCollection services) =>
-        services.AddSingleton<IReportService, ReportService>();
+        services.AddScoped<IReportService, ReportService>();
 
     public static IServiceCollection AddSealFeature(this IServiceCollection services) =>
-        services.AddSingleton<ISealService, SealService>();
+        services.AddScoped<ISealService, SealService>();
 
     /// The simulator itself (ILiveControl, ILiveSimulatorFactory, ILiveHub) comes from the infrastructure.
     public static IServiceCollection AddLiveFeature(this IServiceCollection services) =>
-        services.AddSingleton<ILiveBoardService, LiveBoardService>();
+        services.AddScoped<ILiveBoardService, LiveBoardService>();
 
     /// The AI providers (IAiProvider) come from the infrastructure.
     public static IServiceCollection AddAssistantFeature(this IServiceCollection services) => services
-        .AddSingleton<IAssistantTools, AssistantTools>()
-        .AddSingleton<IQuickAnswerService, QuickAnswerService>()
-        .AddSingleton<IAssistantService, AssistantService>();
+        .AddScoped<IAssistantTools, AssistantTools>()
+        .AddScoped<IQuickAnswerService, QuickAnswerService>()
+        .AddScoped<IAssistantService, AssistantService>();
 
     public static IServiceCollection AddDemoFeature(this IServiceCollection services) =>
-        services.AddSingleton<IDemoService, DemoService>();
+        services.AddScoped<IDemoService, DemoService>();
 
     public static IServiceCollection AddSettingsFeature(this IServiceCollection services) =>
-        services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddScoped<ISettingsService, SettingsService>();
 
     /// Sections run in this order.
     public static IServiceCollection AddSelfTestFeature(this IServiceCollection services) => services
-        .AddSingleton<ISelfTestSection, CoreSelfTest>()
-        .AddSingleton<ISelfTestSection, LiveSelfTest>()
-        .AddSingleton<ISelfTestSection, AssistantSelfTest>()
-        .AddSingleton<ISelfTestSection, RangeSelfTest>()
-        .AddSingleton<ISelfTestSection, LedgerSelfTest>()
-        .AddSingleton<ISelfTestSection, SealSelfTest>()
-        .AddSingleton<ISelfTestService, SelfTestService>();
+        .AddScoped<ISelfTestSection, CoreSelfTest>()
+        .AddScoped<ISelfTestSection, LiveSelfTest>()
+        .AddScoped<ISelfTestSection, AssistantSelfTest>()
+        .AddScoped<ISelfTestSection, RangeSelfTest>()
+        .AddScoped<ISelfTestSection, LedgerSelfTest>()
+        .AddScoped<ISelfTestSection, SealSelfTest>()
+        .AddScoped<ISelfTestService, SelfTestService>();
 }

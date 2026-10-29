@@ -1,14 +1,11 @@
 using BacchusLedger.Application.Providers;
-using BacchusLedger.Application.Repositories;
 using BacchusLedger.Application.Services;
 using BacchusLedger.Domain.Ranges;
 
 namespace BacchusLedger.Infrastructure.Live;
 
-public sealed class LiveSimulatorFactory(
-    IBatchRepository batches, IVesselRepository vessels, IReadingRepository readings, IOperationRepository operations, ILiveEventRepository events,
-    ISettingsRepository settings, ILossAnalysisService losses, IRangeConfigSource ranges) : ILiveSimulatorFactory
+/// Simulators bound to the current scope (the selftest runs them inside its rolled-back transaction).
+public sealed class LiveSimulatorFactory(IServiceProvider scope, IRangeConfigSource ranges) : ILiveSimulatorFactory
 {
-    public ILiveSimulator Create(int? seed = null) =>
-        new LiveSimulator(batches, vessels, readings, operations, events, settings, losses, new RangeConfig(ranges.Config), seed);
+    public ILiveSimulator Create(int? seed = null) => new LiveSimulator(LiveSimulatorDependencies.From(scope), new RangeConfig(ranges.Config), seed);
 }

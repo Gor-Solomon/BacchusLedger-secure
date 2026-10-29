@@ -4,7 +4,7 @@ using BacchusLedger.Application.Repositories;
 namespace BacchusLedger.Application.Services.SelfTest;
 
 /// Chain + signature (rolled back).
-public sealed class SealSelfTest(ISealService seals, ISealRepository sealTables, IBatchRepository batches, IUnitOfWork unitOfWork) : ISelfTestSection
+public sealed class SealSelfTest(ISealService seals, IBatchRepository batches, IUnitOfWork unitOfWork) : ISelfTestSection
 {
     public async Task RunAsync(SelfTestContext ctx)
     {
@@ -14,7 +14,6 @@ public sealed class SealSelfTest(ISealService seals, ISealRepository sealTables,
         {
             var (ok, tampered, at, sigBad) = await unitOfWork.ProbeAsync(async () =>
             {
-                await sealTables.EnsureTablesAsync();
                 var id = (await batches.FindIdAsync(SeedDataset.W03Batch))!.Value;
                 await seals.EnsureAsync(id);
                 var v1 = await seals.CheckAsync(id);

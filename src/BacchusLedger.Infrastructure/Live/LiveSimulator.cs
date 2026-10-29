@@ -11,10 +11,22 @@ using BacchusLedger.Domain.Ranges;
 namespace BacchusLedger.Infrastructure.Live;
 
 /// LIVE mode: everything here is SIMULATED, stored only in live_events, and never read by journals, the loss engine or ROI numbers.
-public sealed class LiveSimulator(
-    IBatchRepository batches, IVesselRepository vessels, IReadingRepository readings, IOperationRepository operations, ILiveEventRepository events,
-    ISettingsRepository settingsRepository, ILossAnalysisService losses, RangeConfig rangeConfig, int? seed) : ILiveSimulator
+/// The simulator keeps its state between ticks; its data access (deps) belongs to one DbContext scope and is replaced with Use(…)
+/// by the background host before every step.
+public sealed class LiveSimulator(LiveSimulatorDependencies? deps, RangeConfig rangeConfig, int? seed) : ILiveSimulator
 {
+    LiveSimulatorDependencies Deps => deps ?? throw new InvalidOperationException("live simulator used outside a scope");
+    IBatchRepository batches => Deps.Batches;
+    IVesselRepository vessels => Deps.Vessels;
+    IReadingRepository readings => Deps.Readings;
+    IOperationRepository operations => Deps.Operations;
+    ILiveEventRepository events => Deps.Events;
+    ISettingsRepository settingsRepository => Deps.Settings;
+    ILossAnalysisService losses => Deps.Losses;
+
+    /// Binds the simulator to the services of the current scope.
+    public void Use(LiveSimulatorDependencies scoped) => deps = scoped;
+
     public sealed class VState
     {
         public long Id { get; set; }

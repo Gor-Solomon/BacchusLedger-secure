@@ -17,7 +17,6 @@ public sealed class SealService(
     {
         var id = await unitOfWork.WriteAsync(async () =>
         {
-            await seals.EnsureTablesAsync();
             var i = batch == null ? null : await batches.FindIdAsync(batch);
             if (i != null) await EnsureAsync(i.Value);
             return i;
@@ -40,7 +39,6 @@ public sealed class SealService(
     {
         var r = await unitOfWork.WriteAsync(async () =>
         {
-            await seals.EnsureTablesAsync();
             if ((batch == null ? null : await batches.FindIdAsync(batch)) is not { } id) return null;
             var t = await seals.TamperRecordsAsync(id);
             foreach (var x in t) await seals.SetLabTemperatureAsync(x.RowId, x.OldValue);
@@ -60,7 +58,6 @@ public sealed class SealService(
 
     public Task SealAllAsync() => unitOfWork.WriteAsync(async () =>
     {
-        await seals.EnsureTablesAsync();
         if (await seals.GetVersionAsync() != Version)
         {
             logger.LogInformation("seal: chain format v{Version} (deliveries first) — sealing all batches again", Version);
@@ -99,7 +96,6 @@ public sealed class SealService(
 
     public async Task DropAsync(long batchId)
     {
-        await seals.EnsureTablesAsync();
         await seals.DeleteChainAndSealAsync(batchId);
         await seals.DeleteTamperRecordsAsync(batchId);
     }

@@ -51,7 +51,6 @@ public sealed class DemoService(
         var sc = Script(script);
         await unitOfWork.WriteAsync(async () =>
         {
-            await demo.EnsureTablesAsync();
             var b = await DemoBatchAsync(sc);
             if (b != 0)
                 await maintenance.AllowDeleteAsync(async () =>
@@ -113,7 +112,6 @@ public sealed class DemoService(
     /// Applies every step up to n that is not written yet (inside the running transaction).
     async Task ApplyAsync(string script, int n)
     {
-        await demo.EnsureTablesAsync();
         var defs = Defs(script);
         for (int s = 0; s <= n; s++)
         {

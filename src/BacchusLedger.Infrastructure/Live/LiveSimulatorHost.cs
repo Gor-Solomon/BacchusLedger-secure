@@ -1,8 +1,11 @@
 using BacchusLedger.Application.Contracts.Live;
 using BacchusLedger.Application.Models;
 using BacchusLedger.Application.Options;
+using BacchusLedger.Application.Providers;
 using BacchusLedger.Application.Repositories;
 using BacchusLedger.Application.Services;
+using BacchusLedger.Domain.Ranges;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,11 +13,11 @@ using Microsoft.Extensions.Options;
 namespace BacchusLedger.Infrastructure.Live;
 
 /// Background simulator: one tick every LiveOptions.TickSeconds while Live is ON.
+/// Runs outside any request: every step opens its own DI scope (and so its own DbContext).
 public sealed class LiveSimulatorHost(
-    ILiveSimulatorFactory factory, ILiveHub hub, IUnitOfWork unitOfWork, ILiveEventRepository events, IOptions<LiveOptions> options,
-    ILogger<LiveSimulatorHost> logger) : BackgroundService, ILiveControl
+    IServiceScopeFactory scopes, IRangeConfigSource ranges, ILiveHub hub, IOptions<LiveOptions> options, ILogger<LiveSimulatorHost> logger) : BackgroundService, ILiveControl
 {
-    readonly ILiveSimulator sim = factory.Create();
+    readonly LiveSimulator sim = new(null, new RangeConfig(ranges.Config), null);
     readonly SemaphoreSlim gate = new(1, 1);
 
     public LiveStateDto State() => sim.State();
@@ -27,6 +30,7 @@ public sealed class LiveSimulatorHost(
         try
         {
             if (sim.On) return;
+            await using var scope = Bind();
             await sim.StartAsync();
             sim.On = true;
         }
@@ -45,7 +49,12 @@ public sealed class LiveSimulatorHost(
     {
         await TurnOnAsync();
         await gate.WaitAsync();
-        try { await sim.SetScenarioAsync(scenario); } finally { gate.Release(); }
+        try
+        {
+            await using var scope = Bind();
+            await sim.SetScenarioAsync(scenario);
+        }
+        finally { gate.Release(); }
         await TickAsync(); // react immediately
     }
 
@@ -56,7 +65,9 @@ public sealed class LiveSimulatorHost(
         try
         {
             if (!sim.On) return;
-            evs = await unitOfWork.WriteAsync(async () =>
+            await using var scope = Bind();
+            var events = scope.ServiceProvider.GetRequiredService<ILiveEventRepository>();
+            evs = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().WriteAsync(async () =>
             {
                 var e = await sim.TickAsync();
                 // simulated readings are kept short; notifications stay for the feed
@@ -66,6 +77,14 @@ public sealed class LiveSimulatorHost(
         }
         finally { gate.Release(); }
         hub.Publish("tick", new LiveTickMessage(sim.State(), evs.Where(e => e.Kind == "reading").ToList(), evs.Where(e => e.Kind == "notification").ToList()));
+    }
+
+    /// A new scope for one simulator step; the simulator uses its services until the scope is disposed.
+    AsyncServiceScope Bind()
+    {
+        var scope = scopes.CreateAsyncScope();
+        sim.Use(LiveSimulatorDependencies.From(scope.ServiceProvider));
+        return scope;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stop)
