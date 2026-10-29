@@ -31,6 +31,7 @@ public sealed class Startup
         services.AddJournalsFeature();
         services.AddReportFeature();
         services.AddSealFeature();
+        services.AddAssistantFeature();
         services.AddLiveFeature();
     }
 

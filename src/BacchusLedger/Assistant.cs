@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using BacchusLedger.Contracts.Assistant;
 using Microsoft.Data.Sqlite;
 
 namespace BacchusLedger;
@@ -58,17 +59,6 @@ public sealed class AssistantConfig
     public override string ToString() => $"assistant provider={Provider} configured={Configured}"; // never the keys
 }
 
-public sealed class AssistantAnswer
-{
-    public string Text { get; set; } = "";
-    public List<string> Sources { get; set; } = [];
-    public string? Link { get; set; }
-    public string? LinkLabel { get; set; }
-    public List<string> Used { get; set; } = [];
-    public string Mode { get; set; } = "quick"; // quick | ai | offline | not_configured | invalid
-    public string? Provider { get; set; }
-}
-
 /// Marani Assistant. Layer A: 5 quick questions answered by our own code (no AI, offline).
 /// Layer B: free questions — AI tool calling over our own read-only GET API (see AssistantTools).
 public static class Assistant
@@ -95,13 +85,11 @@ public static class Assistant
     public static string Greeting(string lang) => L(lang, "Ask me about any batch, vessel or reading. I only answer from the ledger.",
         "მკითხეთ ნებისმიერი პარტიის, ჭურჭლის ან გაზომვის შესახებ. ვპასუხობ მხოლოდ ჟურნალის მონაცემებით.");
 
-    public static object Status(AssistantConfig cfg, string lang) => new
-    {
-        ai_configured = cfg.Configured,
-        status_text = cfg.Configured ? L(lang, "AI on · answers only from the ledger", "AI ჩართულია · პასუხობს მხოლოდ ჟურნალიდან") : NotConfigured(lang),
-        greeting = Greeting(lang), max_chars = MaxChars,
-        quick = QuickTitles.Select((q, i) => new { n = i + 1, title = L(lang, q[0], q[1]) }),
-    };
+    public static AssistantStatusDto Status(AssistantConfig cfg, string lang) => new(
+        cfg.Configured,
+        cfg.Configured ? L(lang, "AI on · answers only from the ledger", "AI ჩართულია · პასუხობს მხოლოდ ჟურნალიდან") : NotConfigured(lang),
+        Greeting(lang), MaxChars,
+        QuickTitles.Select((q, i) => new QuickQuestionDto(i + 1, L(lang, q[0], q[1]))).ToList());
 
     // ---------------------------------------------------------------- Layer A: quick questions (our own code, read-only)
     public sealed record Step(string Stage, string Date, double LossL, double? LossPct, string Status);
@@ -268,14 +256,15 @@ public static class Assistant
         return JsonNode.Parse(text);
     };
 
-    public static async Task<IResult> AskEndpoint(JsonElement body, AssistantConfig cfg, Func<string, Task<JsonNode?>> get)
+    /// POST /api/assistant/ask: always an answer (HTTP 200); any failure becomes the "offline" answer.
+    public static async Task<AssistantAnswer> AskSafe(JsonElement body, AssistantConfig cfg, Func<string, Task<JsonNode?>> get)
     {
         var q = body.ValueKind == JsonValueKind.Object && body.TryGetProperty("question", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-        try { return Results.Ok(await Ask(q, cfg, get)); }
+        try { return await Ask(q, cfg, get); }
         catch (Exception e)
         {
             Console.Error.WriteLine($"assistant: ask failed ({e.GetType().Name})");
-            return Results.Ok(new AssistantAnswer { Mode = "offline", Text = Offline(IsKa(q) ? "ka" : "en") });
+            return new AssistantAnswer { Mode = "offline", Text = Offline(IsKa(q) ? "ka" : "en") };
         }
     }
 
@@ -473,9 +462,8 @@ public static class Assistant
         var bodies = new List<(string where, string text)>();
         try
         {
-            var r = AskEndpoint(JsonDocument.Parse("""{"question":"How much wine did W01 lose?"}""").RootElement, AssistantConfig.None, _ => Task.FromResult<JsonNode?>(null)).GetAwaiter().GetResult();
-            var code = (r as IStatusCodeHttpResult)?.StatusCode;
-            var a = (r as IValueHttpResult)?.Value as AssistantAnswer;
+            var a = AskSafe(JsonDocument.Parse("""{"question":"How much wine did W01 lose?"}""").RootElement, AssistantConfig.None, _ => Task.FromResult<JsonNode?>(null)).GetAwaiter().GetResult();
+            const int code = 200; // the endpoint always answers with HTTP 200
             bodies.Add(("ask (no key)", JsonSerializer.Serialize(a)));
             Add(g, "POST /api/assistant/ask with no key: HTTP 200 + \"AI not configured\"", "200 · AI not configured", $"{code} · {a?.Text}",
                 code == 200 && a?.Text.Contains("AI not configured") == true);

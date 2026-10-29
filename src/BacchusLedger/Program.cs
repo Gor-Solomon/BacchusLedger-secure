@@ -90,14 +90,6 @@ app.MapPost("/api/settings", (Dictionary<string, JsonElement> body, LiveService 
 });
 app.MapPost("/api/reset", () => { Db.Reseed(); return Results.Ok(new { reset = true }); });
 
-// ---------------- Marani Assistant (Update 4) — read-only ----------------
-static string Lang(string? l) => l == "ka" ? "ka" : "en";
-app.MapGet("/api/assistant/status", (string? lang) => Results.Ok(Assistant.Status(AssistantConfig.FromEnv(), Lang(lang))));
-app.MapGet("/api/assistant/quick/{n:int}", (int n, string? lang) =>
-    n is < 1 or > 5 ? Results.NotFound(new { error = "no such question" }) : Results.Ok(Assistant.Quick(n, Lang(lang), Db.Settings())));
-app.MapPost("/api/assistant/ask", (HttpContext ctx, JsonElement body) =>
-    Assistant.AskEndpoint(body, AssistantConfig.FromEnv(), Assistant.LocalGet($"http://127.0.0.1:{ctx.Connection.LocalPort}")));
-
 app.MapGet("/api/selftest", (HttpContext ctx) => Results.Ok(SelfTest.Run($"http://127.0.0.1:{ctx.Connection.LocalPort}", app.Environment.WebRootPath)));
 
 app.Run();
