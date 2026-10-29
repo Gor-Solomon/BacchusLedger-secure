@@ -1,3 +1,4 @@
+using BacchusLedger.Contracts.Demo;
 using Microsoft.Data.Sqlite;
 
 namespace BacchusLedger;
@@ -7,8 +8,6 @@ public static class DemoScript
 {
     public const string W01Code = "W01-B1-2025-DEMO", W03Code = "W03-B3-2025-DEMO";
 
-    public record Field(string Label, string Value, string Source);
-    public record Did(string Text, string Source, string? Status = null); // pass | fail | info | above | null
 
     record StepDef(string Title, string? Date, int[] Journals, Action<SqliteConnection, SqliteTransaction>? Apply);
 
@@ -122,16 +121,13 @@ public static class DemoScript
     ];
 
     // ---------- public API ----------
-    public static object Steps(string script)
+    public static DemoStepsDto Steps(string script)
     {
         var defs = Defs(script);
         using var c = Db.Open();
         var done = Db.Query(c, "SELECT step FROM demo_progress WHERE script=$1", script).Select(r => (long)r["step"]!).ToHashSet();
-        return new
-        {
-            script, batch_code = BatchCode(script), total = defs.Length,
-            steps = defs.Select((d, i) => new { n = i, title = d.Title, date = d.Date == null ? null : Fmt.Date(d.Date), journals = d.Journals, written = done.Contains(i) }),
-        };
+        return new DemoStepsDto(script, BatchCode(script), defs.Length,
+            defs.Select((d, i) => new DemoStepDto(i, d.Title, d.Date == null ? null : Fmt.Date(d.Date), d.Journals, done.Contains(i))).ToList());
     }
 
     public static void EnsureTables(SqliteConnection c, SqliteTransaction tx) =>
@@ -160,7 +156,7 @@ public static class DemoScript
         return 0;
     });
 
-    public static object Step(string script, int n)
+    public static DemoCardDto Step(string script, int n)
     {
         var defs = Defs(script);
         if (n < 0 || n >= defs.Length) throw new ArgumentOutOfRangeException(nameof(n));
@@ -192,7 +188,7 @@ public static class DemoScript
         }
     }
 
-    static object Card(SqliteConnection c, string script, int n)
+    static DemoCardDto Card(SqliteConnection c, string script, int n)
     {
         var defs = Defs(script);
         var def = defs[n];
@@ -202,8 +198,8 @@ public static class DemoScript
         var an = batchId != 0 ? LossEngine.Analyze(c, batchId, s) : null;
         LossEngine.Stage? St(string date, string type) => an?.Stages.FirstOrDefault(x => x.Date == date && x.Type == type);
 
-        var received = new List<Field>();
-        var did = new List<Did>();
+        var received = new List<DemoFieldDto>();
+        var did = new List<DemoDidDto>();
         object? extra = null;
 
         if (script == "w01") BuildW01(c, n, an, St, vpl, lpt, received, did, ref extra);
@@ -211,24 +207,13 @@ public static class DemoScript
 
         double kg = Tracked(c, script, "deliveries").Sum(id => Db.D(Db.Query(c, "SELECT kg FROM deliveries WHERE id=$1", id)[0]["kg"]) ?? 0);
         var filled = defs.Take(n + 1).SelectMany(d => d.Journals).Distinct().Count();
-        return new
-        {
-            script, n, total = defs.Length, title = def.Title, date = def.Date == null ? null : Fmt.Date(def.Date), journals = def.Journals,
-            received, did, extra, batch_id = batchId == 0 ? (long?)null : batchId, batch_code = BatchCode(script),
-            totals = new
-            {
-                kg_received = kg,
-                litres_now = an?.LitresNow ?? 0,
-                bottled_l = an?.BottledL ?? 0,
-                total_loss_l = an?.TotalLossL ?? 0,
-                loss_value_usd = an?.LossValueUsd ?? 0,
-                journals_filled = filled, journals_total = 8,
-            },
-        };
+        var totals = new DemoTotalsDto(kg, an?.LitresNow ?? 0, an?.BottledL ?? 0, an?.TotalLossL ?? 0, an?.LossValueUsd ?? 0, filled, 8);
+        return new DemoCardDto(script, n, defs.Length, def.Title, def.Date == null ? null : Fmt.Date(def.Date), def.Journals,
+            received, did, extra, batchId == 0 ? null : batchId, BatchCode(script), totals);
     }
 
     static void BuildW01(SqliteConnection c, int n, LossEngine.Result? an, Func<string, string, LossEngine.Stage?> St, double vpl, double lpt,
-        List<Field> rec, List<Did> did, ref object? extra)
+        List<DemoFieldDto> rec, List<DemoDidDto> did, ref object? extra)
     {
         var fs = Seed.W01Farmers;
         double total = fs.Sum(f => f.Kg);
@@ -285,7 +270,7 @@ public static class DemoScript
                 did.Add(new($"Peak temperature {tmp[pk]:0.0} °C on day {pk + 1}", "Calculated", null));
                 did.Add(new($"Fermentation finished at {sug[^1]:0.0} g/L", "Dataset A3", "pass"));
                 did.Add(new("Journal 7 (Laboratory analysis) updated", "Kakheti PDO spec", null));
-                extra = new { chart = "fermentation", days = Enumerable.Range(1, sug.Length), dates = Enumerable.Range(0, sug.Length).Select(i => Fmt.Date(Seed.A3Date(i))), sugar = sug, temp = tmp, source = "Dataset A3" };
+                extra = new FermentationChartExtra("fermentation", Enumerable.Range(1, sug.Length).ToList(), Enumerable.Range(0, sug.Length).Select(i => Fmt.Date(Seed.A3Date(i))).ToList(), sug, tmp, "Dataset A3");
                 break;
             }
             case 6:
@@ -333,18 +318,18 @@ public static class DemoScript
                         did.Add(new($"{st.StageKey.Replace('_', ' ')}: {N0(st.LossL!.Value)} L ({P2(st.LossPct)}%)", "Calculated", Status(st)));
                 }
                 did.Add(new("8 of 8 journals available (tasting = template)", "Kakheti PDO spec", "pass"));
-                extra = new { buttons = new[] { "history", "journals" } };
+                extra = new ButtonsExtra(["history", "journals"]);
                 break;
             case 14:
                 rec.Add(new("Market", "1,027 wine companies in Georgia in 2023 (6 large, 29 medium, 982 small)", "TBC Capital 2024"));
                 rec.Add(new("UVP", "The only cellar record that works with qvevri, in Georgian, for Kakheti law, with no sensors and no internet needed.", "Hackathon slides"));
                 did.Add(new("Not proven yet: how much loss a winery can win back — the pilot (Nov–Dec) measures it.", "Calculated", "info"));
-                extra = new { one_percent = Money.OnePercentTable(c, vpl, lpt) };
+                extra = new OnePercentExtra(Money.OnePercentTable(c, vpl, lpt));
                 break;
         }
     }
 
-    static void StageCard(LossEngine.Stage? s, string received, List<Field> rec, List<Did> did, double vpl)
+    static void StageCard(LossEngine.Stage? s, string received, List<DemoFieldDto> rec, List<DemoDidDto> did, double vpl)
     {
         rec.Add(new(s?.StageKey == "stock_check" ? "Stock check" : s?.StageKey == "filtration" ? "Filtration" : "Racking", received, s?.Source ?? "Dataset"));
         if (s == null) return;
@@ -364,7 +349,7 @@ public static class DemoScript
     }
 
     static void BuildW03(SqliteConnection c, int n, LossEngine.Result? an, Func<string, string, LossEngine.Stage?> St, double vpl,
-        List<Field> rec, List<Did> did, ref object? extra)
+        List<DemoFieldDto> rec, List<DemoDidDto> did, ref object? extra)
     {
         var f = Seed.W03Farmer;
         switch (n)
@@ -401,7 +386,7 @@ public static class DemoScript
                 did.Add(new($"Qvevri dip: 1,230 L in Q-3 ↔ dip {dip:0.0} cm from the rim (A5 table)", "Calculated", "info"));
                 did.Add(new($"Yield = 1,230 / 1.85 t = {1230 / 1.85:0} L/t", "Calculated", null));
                 did.Add(new("Journals 5 and 7 updated", "Kakheti PDO spec", null));
-                extra = new { dip_cm = Math.Round(dip, 1), litres = 1230, vessel = "Q-3", capacity = Math.Round(m.Capacity, 0) };
+                extra = new QvevriDipExtra(Math.Round(dip, 1), 1230, "Q-3", Math.Round(m.Capacity, 0));
                 break;
             }
             case 4:
@@ -459,7 +444,7 @@ public static class DemoScript
                         did.Add(new($"{st.StageKey.Replace('_', ' ')}: {N0(st.LossL!.Value)} L ({P2(st.LossPct)}%)", "Calculated", Status(st)));
                 }
                 did.Add(new("8 of 8 journals available (tasting = template)", "Kakheti PDO spec", "pass"));
-                extra = new { buttons = new[] { "history", "journals" } };
+                extra = new ButtonsExtra(["history", "journals"]);
                 break;
         }
     }

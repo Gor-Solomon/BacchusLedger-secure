@@ -35,6 +35,9 @@ public static class FeatureServiceCollectionExtensions
     public static IServiceCollection AddAssistantFeature(this IServiceCollection services) =>
         services.AddSingleton<IAssistantService, AssistantService>();
 
+    public static IServiceCollection AddDemoFeature(this IServiceCollection services) =>
+        services.AddSingleton<IDemoService, DemoService>();
+
     public static IServiceCollection AddLiveFeature(this IServiceCollection services)
     {
         services.AddSingleton<LiveHub>();

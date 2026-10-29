@@ -32,6 +32,7 @@ public sealed class Startup
         services.AddReportFeature();
         services.AddSealFeature();
         services.AddAssistantFeature();
+        services.AddDemoFeature();
         services.AddLiveFeature();
     }
 
