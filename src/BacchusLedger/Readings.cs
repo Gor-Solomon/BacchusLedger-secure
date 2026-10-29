@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.Data.Sqlite;
 
 namespace BacchusLedger;
 
@@ -48,42 +47,6 @@ public static class Readings
         var (min, max) = Range[r.Type];
         if (double.IsNaN(r.Value) || r.Value < min || r.Value > max) return $"{r.Type} must be between {min} and {max} {Units[r.Type]}";
         return null;
-    }
-
-    static string VesselClause(long? vesselId) => vesselId == null ? "vessel_id IS NULL" : "vessel_id=$2";
-
-    /// Warnings shown before and after saving (the reading is still saved — corrections are new rows).
-    public static List<string> Warnings(SqliteConnection c, Input r)
-    {
-        var w = new List<string>();
-        if (r.Type == "initial_brix")
-        {
-            // First fermentation reading of this vessel/batch: any non-Brix reading, or a lab row (e.g. the Dataset A3 fermentation log)
-            var first = Db.Query(c, $"""
-                SELECT MIN(t) t FROM (
-                  SELECT taken_at AS t FROM readings WHERE batch_id=$1 AND {VesselClause(r.VesselId)} AND type<>'initial_brix' AND taken_at<=$3
-                  UNION ALL SELECT date || 'T09:00' FROM lab WHERE batch_id=$1 AND {VesselClause(r.VesselId)} AND date || 'T09:00'<=$3)
-                """, r.BatchId, r.VesselId, r.TakenAt)[0]["t"] as string;
-            if (first != null)
-                w.Add($"Fermentation has already started in this vessel (first reading {Fmt.DateTime(first)}). Refractometers are not accurate once alcohol is present — use the hydrometer. Initial Brix should be taken before fermentation.");
-            if (Db.Query(c, $"SELECT 1 FROM readings WHERE batch_id=$1 AND {VesselClause(r.VesselId)} AND type='initial_brix'", r.BatchId, r.VesselId).Count > 0)
-                w.Add("Initial Brix is recorded once per vessel/batch. This entry is saved as a correction — the latest Initial Brix is used for the calculations.");
-        }
-        if (r.Type == "hydrometer_abv" && LatestBrix(c, r.BatchId, r.VesselId) == null)
-            w.Add("No Initial Brix for this vessel/batch yet — fermentation progress cannot be calculated.");
-        return w;
-    }
-
-    public static double? LatestBrix(SqliteConnection c, long batchId, long? vesselId) =>
-        Db.D(Db.Query(c, $"SELECT value FROM readings WHERE batch_id=$1 AND {VesselClause(vesselId)} AND type='initial_brix' ORDER BY id DESC LIMIT 1", batchId, vesselId)
-            .FirstOrDefault()?["value"]);
-
-    public static (long id, List<string> warnings) Insert(SqliteConnection c, SqliteTransaction tx, Input r)
-    {
-        var warnings = Warnings(c, r);
-        var id = Db.Insert(c, tx, "INSERT INTO readings(batch_id,vessel_id,taken_at,type,value,unit,instrument,person,note,source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-            r.BatchId, r.VesselId, r.TakenAt, r.Type, r.Value, Units[r.Type], r.Instrument ?? DefaultInstrument[r.Type], r.Person, r.Note, r.Source);
-        return (id, warnings);
     }
 
     /// Calculated values for one reading given the Initial Brix of its vessel/batch (all null when nothing applies).

@@ -1,42 +1,19 @@
 using System.Globalization;
-using System.Text.Json;
-using System.Threading.Channels;
+using System.Text.Json.Nodes;
 using BacchusLedger.Contracts.Live;
-using Microsoft.Data.Sqlite;
+using BacchusLedger.Dataset;
+using BacchusLedger.Extensions;
+using BacchusLedger.Models;
+using BacchusLedger.Repositories;
+using BacchusLedger.Services;
 
-namespace BacchusLedger;
+namespace BacchusLedger.Infrastructure.Live;
 
-/// Update 3: LIVE mode. Everything here is SIMULATED, stored only in `live_events`, and never read by
-/// journals, the loss engine or ROI numbers.
-public sealed class LiveEvent
+/// LIVE mode: everything here is SIMULATED, stored only in live_events, and never read by journals, the loss engine or ROI numbers.
+public sealed class LiveSimulator(
+    IBatchRepository batches, IVesselRepository vessels, IReadingRepository readings, IOperationRepository operations, ILiveEventRepository events,
+    ISettingsRepository settingsRepository, ILossAnalysisService losses, JsonNode? rangeConfig, int? seed) : ILiveSimulator
 {
-    public long Id { get; set; }
-    public string CreatedAt { get; set; } = "";
-    public string SimTime { get; set; } = "";
-    public long? VesselId { get; set; }
-    public string? VesselCode { get; set; }
-    public string? VesselName { get; set; }
-    public string Kind { get; set; } = "reading"; // reading | notification
-    public string? Metric { get; set; }           // temperature | level | density
-    public double? Value { get; set; }
-    public string? Unit { get; set; }
-    public string? Level { get; set; }            // red | amber | green (notifications)
-    public string? Rule { get; set; }             // temp_high | level_drop | stuck | missing_brix | back_normal | all_good
-    public string? Message { get; set; }
-    public double? ValueUsd { get; set; }
-    public string? Scenario { get; set; }
-    public string Source { get; set; } = "SIMULATED";
-    public bool Acknowledged { get; set; }
-}
-
-public sealed class LiveSim
-{
-    public static readonly string[] Scenarios = ["hot", "loss", "stuck", "missing", "allgood"];
-    public static readonly Dictionary<string, string> ScenarioTitles = new()
-    {
-        ["hot"] = "Hot fermentation", ["loss"] = "Unrecorded wine loss", ["stuck"] = "Stuck fermentation", ["missing"] = "Missing data", ["allgood"] = "All good",
-    };
-
     public sealed class VState
     {
         public long Id { get; set; }
@@ -73,86 +50,74 @@ public sealed class LiveSim
     /// Real time Live was switched on: only operations recorded after this count as "an operation was recorded".
     public DateTime StartedUtc { get; private set; }
     public List<VState> Vessels { get; } = [];
-    readonly Random rnd;
+    readonly Random rnd = seed == null ? new Random() : new Random(seed.Value);
     int step;
     readonly List<LiveEvent> pendingNotes = [];
-    Dictionary<string, string> settings = new(Db.DefaultSettings);
-
-    public LiveSim(int? seed = null) { rnd = seed == null ? new Random() : new Random(seed.Value); }
-
-    /// Range config (config/ranges.json); the selftest can pass its own.
-    public System.Text.Json.Nodes.JsonNode? RangeConfig { get; init; } = Ranges.Config;
+    IReadOnlyDictionary<string, string> settings = SettingDefaults.Copy();
 
     double Noise(double amp) => (rnd.NextDouble() * 2 - 1) * amp;
-    double S(string k) => Db.SettingD(settings, k);
+    double S(string k) => settings.Number(k);
 
     /// Active demo vessels: F-2 (fermenting), Q-3 (qvevri), T1-2 (storage); F-1 joins for "Missing data".
     static readonly (string Winery, string Code, bool Fermenting, bool Streaming)[] Active =
         [("W01", "F-2", true, true), ("W03", "Q-3", false, true), ("W01", "T1-2", false, true), ("W01", "F-1", true, false)];
 
     /// Base values start from the vessel's last recorded value; when there is none, a simulated default (all of it is SIMULATED).
-    public void Start(SqliteConnection c, Dictionary<string, string>? s = null)
+    public async Task StartAsync(IReadOnlyDictionary<string, string>? s = null)
     {
-        settings = s ?? Db.Settings();
+        settings = s ?? await settingsRepository.GetAsync();
         Vessels.Clear(); pendingNotes.Clear();
         SimTime = new DateTime(2026, 10, 1, 8, 0, 0);
         StartedUtc = DateTime.UtcNow;
         step = 0; Scenario = "allgood";
         var contents = new Dictionary<long, double>();
-        foreach (var b in Db.Query(c, "SELECT id FROM batches WHERE COALESCE(source_note,'') NOT LIKE '%copy%'"))
-            foreach (var (code, l) in LossEngine.Analyze(c, (long)b["id"]!, settings, compare: false).VesselLitres)
-                foreach (var v in Db.Query(c, "SELECT v.id FROM vessels v JOIN batches b ON b.winery_id=v.winery_id WHERE b.id=$1 AND v.code=$2", b["id"], code))
-                    contents[(long)v["id"]!] = contents.GetValueOrDefault((long)v["id"]!) + l;
+        foreach (var b in await batches.ListRealIdsAsync())
+            foreach (var (code, l) in (await losses.AnalyzeAsync(b, settings, compare: false)).VesselLitres)
+                foreach (var v in await vessels.ListIdsAsync(b, code))
+                    contents[v] = contents.GetValueOrDefault(v) + l;
         foreach (var (w, code, ferm, streaming) in Active)
         {
-            var v = Db.Query(c, "SELECT v.* FROM vessels v JOIN wineries w ON w.id=v.winery_id WHERE w.code=$1 AND v.code=$2", w, code).FirstOrDefault();
+            var v = await vessels.GetAsync(w, code);
             if (v == null) continue;
-            long id = (long)v["id"]!;
-            double? cap = Db.D(v["capacity_l"]);
-            double? lastT = Db.D(Db.Query(c, "SELECT value FROM readings WHERE vessel_id=$1 AND type='temperature' ORDER BY taken_at DESC, id DESC LIMIT 1", id).FirstOrDefault()?["value"]);
-            double? lastD = Db.D(Db.Query(c, "SELECT value FROM readings WHERE vessel_id=$1 AND type='hydrometer_density' ORDER BY taken_at DESC, id DESC LIMIT 1", id).FirstOrDefault()?["value"]);
+            long id = v.Id;
+            double? cap = v.CapacityL;
+            double? lastT = await readings.LastValueAsync(id, "temperature");
+            double? lastD = await readings.LastValueAsync(id, "hydrometer_density");
             double litres = contents.GetValueOrDefault(id);
             double baseLevel = litres > 0 ? litres : Math.Round((cap ?? 1000) * 0.7);
             double baseT = lastT ?? (ferm ? 25.5 : 14.0);
-            var label = v["cellar_label"] as string;
+            var label = v.CellarLabel;
             Vessels.Add(new VState
             {
-                Id = id, Code = code, Winery = w, Name = string.IsNullOrWhiteSpace(label) ? code : label!, Type = (string)v["type"]!, Fermenting = ferm, Streaming = streaming,
+                Id = id, Code = code, Winery = w, Name = string.IsNullOrWhiteSpace(label) ? code : label!, Type = v.Type, Fermenting = ferm, Streaming = streaming,
                 Temp = baseT, BaseTemp = baseT, Level = baseLevel, BaseLevel = baseLevel, Capacity = cap,
                 Density = ferm ? lastD ?? 1.060 : null, BaseDensity = ferm ? lastD ?? 1.060 : null,
             });
             Vessels[^1].LevelHist.Add((SimTime, baseLevel));
             // batch now (or last) in the vessel -> wine type -> which default range applies
-            var b = Db.Query(c, """
-                SELECT b.code, b.wine_type FROM batches b JOIN (
-                  SELECT batch_id, date AS d FROM operations WHERE from_vessel_id=$1 OR to_vessel_id=$1
-                  UNION ALL SELECT batch_id, taken_at FROM readings WHERE vessel_id=$1
-                  UNION ALL SELECT batch_id, date FROM lab WHERE vessel_id=$1) x ON x.batch_id=b.id
-                WHERE COALESCE(b.source_note,'') NOT LIKE '%copy%' GROUP BY b.id ORDER BY MAX(x.d) DESC LIMIT 1
-                """, id).FirstOrDefault();
-            var wineType = b?["wine_type"] as string ?? Db.Query(c, """
-                SELECT b.wine_type FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE w.code=$1 AND COALESCE(b.source_note,'') NOT LIKE '%copy%' ORDER BY b.code LIMIT 1
-                """, w).FirstOrDefault()?["wine_type"] as string;
+            var b = await vessels.LastRealBatchAsync(id);
+            var wineType = b?.WineType ?? await vessels.FirstRealWineTypeAsync(w);
             var vs = Vessels[^1];
-            vs.Batch = b?["code"] as string;
+            vs.Batch = b?.Code;
             vs.WineColor = Ranges.WineColor(wineType);
             foreach (var m in RangeMetrics)
-                if (Ranges.For(RangeConfig, w, code, m, ferm, vs.WineColor, cap) is { } r) vs.Ranges[m] = r;
+                if (Ranges.For(rangeConfig, w, code, m, ferm, vs.WineColor, cap) is { } r) vs.Ranges[m] = r;
         }
     }
 
     /// Settings changed (thresholds are editable): the running simulator uses them from the next tick.
-    public void UseSettings(Dictionary<string, string> s) => settings = s;
+    public void UseSettings(IReadOnlyDictionary<string, string> s) => settings = s;
+
+    public double? AllowedMax(string vesselCode, string metric) => V(vesselCode)?.Ranges.GetValueOrDefault(metric)?.Max;
 
     VState? V(string code) => Vessels.FirstOrDefault(v => v.Code == code);
 
     /// Missing-data target: F-2 if it has no Initial Brix recorded, otherwise F-1 (the dataset has no Brix for it).
-    string MissingTarget(SqliteConnection c) =>
-        Db.Query(c, "SELECT 1 FROM readings r JOIN vessels v ON v.id=r.vessel_id WHERE v.code='F-2' AND r.type='initial_brix'").Count == 0 ? "F-2" : "F-1";
+    async Task<string> MissingTargetAsync() => await readings.VesselHasInitialBrixAsync("F-2") ? "F-1" : "F-2";
 
-    public void SetScenario(SqliteConnection c, string scenario)
+    public async Task SetScenarioAsync(string scenario)
     {
-        if (!Scenarios.Contains(scenario)) throw new ArgumentException("unknown scenario");
+        if (!LiveScenarios.All.Contains(scenario)) throw new ArgumentException("unknown scenario");
         Scenario = scenario; step = 0;
         foreach (var v in Vessels) { v.Streaming = v.Code != "F-1"; }
         var f2 = V("F-2");
@@ -163,7 +128,7 @@ public sealed class LiveSim
                 if (f2 != null) { if ((f2.Density ?? 0) <= 1.015) f2.Density = 1.045; f2.DensHist.Clear(); }
                 break;
             case "missing":
-                var target = V(MissingTarget(c));
+                var target = V(await MissingTargetAsync());
                 if (target != null) { target.Streaming = true; target.Density ??= 1.050; }
                 break;
             case "allgood":
@@ -193,11 +158,11 @@ public sealed class LiveSim
     };
 
     /// One simulator step (every 3 s when Live is ON). Events are written to live_events in the given transaction.
-    public List<LiveEvent> Tick(SqliteConnection c, SqliteTransaction tx)
+    public async Task<List<LiveEvent>> TickAsync()
     {
         var stepLen = Scenario == "stuck" ? TimeSpan.FromHours(6) : TimeSpan.FromMinutes(15);
         SimTime += stepLen; step++;
-        var events = new List<LiveEvent>(pendingNotes); pendingNotes.Clear();
+        var evs = new List<LiveEvent>(pendingNotes); pendingNotes.Clear();
         foreach (var v in Vessels.Where(v => v.Streaming))
         {
             // temperature
@@ -208,8 +173,8 @@ public sealed class LiveSim
             if (Scenario == "loss" && v.Code == "Q-3" && step <= 3) v.Level -= 25.0 / 3;
             double level = Math.Round(v.Level + Noise(2), 1);
             v.LevelHist.Add((SimTime, level));
-            events.Add(Reading(v, "temperature", temp, "°C"));
-            events.Add(Reading(v, "level", level, "L"));
+            evs.Add(Reading(v, "temperature", temp, "°C"));
+            evs.Add(Reading(v, "level", level, "L"));
             double? dens = null;
             // density trending down while fermenting (flat when stuck)
             if (v.Fermenting && v.Density != null)
@@ -218,10 +183,10 @@ public sealed class LiveSim
                 if (!stuck && v.Density > 0.996) v.Density = Math.Max(0.996, v.Density.Value - 0.0006 * stepLen.TotalHours);
                 double d = Math.Round(v.Density.Value + (stuck ? 0 : Noise(0.0002)), 4);
                 v.DensHist.Add((SimTime, d));
-                events.Add(Reading(v, "density", d, "SG"));
+                evs.Add(Reading(v, "density", d, "SG"));
                 dens = d;
             }
-            events.AddRange(Rules(c, v, new() { ["temperature"] = temp, ["level"] = level, ["density"] = dens }));
+            evs.AddRange(await RulesAsync(v, new() { ["temperature"] = temp, ["level"] = level, ["density"] = dens }));
             v.Status = v.Alerts.Values.Contains("red") ? "red" : v.Alerts.Count > 0 ? "amber" : "ok";
             // keep only what the rules need
             v.LevelHist.RemoveAll(h => h.t < SimTime - TimeSpan.FromHours(6));
@@ -229,19 +194,16 @@ public sealed class LiveSim
         }
         var now = DateTime.UtcNow.ToString("o");
         var sim = SimTime.ToString("yyyy-MM-ddTHH:mm");
-        foreach (var e in events)
+        foreach (var e in evs)
         {
             e.CreatedAt = now; e.SimTime = sim;
-            e.Id = Db.Insert(c, tx, """
-                INSERT INTO live_events(created_at,sim_time,vessel_id,vessel_code,vessel_name,kind,metric,value,unit,level,rule,message,value_usd,scenario,source,acknowledged)
-                VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,0)
-                """, e.CreatedAt, e.SimTime, e.VesselId, e.VesselCode, e.VesselName, e.Kind, e.Metric, e.Value, e.Unit, e.Level, e.Rule, e.Message, e.ValueUsd, e.Scenario, e.Source);
+            e.Id = await events.InsertAsync(e);
         }
-        return events;
+        return evs;
     }
 
     /// Rules → notifications. Thresholds are DEMO ASSUMPTIONS (Settings). A notification fires on entering a state, green on leaving it.
-    IEnumerable<LiveEvent> Rules(SqliteConnection c, VState v, Dictionary<string, double?> values)
+    async Task<List<LiveEvent>> RulesAsync(VState v, Dictionary<string, double?> values)
     {
         var outp = new List<LiveEvent>();
         void Set(string rule, bool active, string level, Func<string> msg, double? usd = null)
@@ -280,8 +242,7 @@ public sealed class LiveSim
         double drop = recent.Count > 0 ? recent.Max(h => h.v) - recent[^1].v : 0;
         if (drop > S("live_level_drop_l") && !v.Alerts.ContainsKey("level_drop"))
         {
-            bool opRecorded = Db.Query(c, "SELECT 1 FROM operations WHERE (from_vessel_id=$1 OR to_vessel_id=$1) AND created_at>=$2",
-                v.Id, (StartedUtc > DateTime.UtcNow.AddHours(-1) ? StartedUtc : DateTime.UtcNow.AddHours(-1)).ToString("o")).Count > 0;
+            bool opRecorded = await operations.AnyRecordedSinceAsync(v.Id, (StartedUtc > DateTime.UtcNow.AddHours(-1) ? StartedUtc : DateTime.UtcNow.AddHours(-1)).ToString("o"));
             if (!opRecorded)
             {
                 double lost = Math.Round(drop);
@@ -301,7 +262,7 @@ public sealed class LiveSim
             Set("stuck", flat, "amber", () => $"{v.Name} fermentation may be stuck: density flat at {v.Density.Value.ToString("0.000", CultureInfo.InvariantCulture)} for {hours:0} h.");
         }
 
-        if (Scenario == "missing" && v.Fermenting && v.Code == MissingTarget(c))
+        if (Scenario == "missing" && v.Fermenting && v.Code == await MissingTargetAsync())
             Set("missing_brix", true, "amber", () => $"{v.Name} has no Initial Brix — potential alcohol can't be calculated.");
         return outp;
     }
@@ -310,7 +271,7 @@ public sealed class LiveSim
     public static string RangeRule(string metric, string dir) => (metric == "temperature" ? "temp" : metric) + (dir == "too low" ? "_low" : "_high");
 
     public LiveStateDto State() => new(
-        On, Scenario, ScenarioTitles[Scenario], SimTime.ToString("yyyy-MM-ddTHH:mm"),
+        On, Scenario, LiveScenarios.Titles[Scenario], SimTime.ToString("yyyy-MM-ddTHH:mm"),
         new LiveThresholdsDto(V("F-2")?.Ranges.GetValueOrDefault("temperature")?.Max ?? 30, S("live_level_drop_l"), S("live_stuck_min_sg")),
         Vessels.SelectMany(v => v.Range.Alerts.Values.Select(a =>
             new RangeAlertDto(v.Code, v.Name, v.Batch, a.Metric, a.Direction, a.Value, a.Range.Min, a.Range.Max, a.Range.Unit, a.Since, "SIMULATED"))).ToList(),
@@ -320,94 +281,4 @@ public sealed class LiveSim
             v.Ranges.ToDictionary(kv => kv.Key, kv => new RangeStateDto(kv.Value.Min, kv.Value.Max, kv.Value.Unit, kv.Value.From,
                 v.Range.InRange.TryGetValue(kv.Key, out var ok) ? ok : null)))).ToList(),
         "SIMULATED");
-
-    /// A real sensor (POST /api/sensors/reading) feeds the same stream; its events are tagged SENSOR, not SIMULATED.
-    public static LiveEvent SensorEvent(long vesselId, string code, string? name, double litres) => new()
-    {
-        Kind = "reading", VesselId = vesselId, VesselCode = code, VesselName = name ?? code, Metric = "level", Value = litres, Unit = "L", Source = "SENSOR",
-        CreatedAt = DateTime.UtcNow.ToString("o"), SimTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm"),
-    };
-}
-
-/// Fan-out of live messages to every open SSE stream.
-public sealed class LiveHub
-{
-    readonly object gate = new();
-    readonly List<Channel<string>> subs = [];
-    public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
-
-    public (ChannelReader<string> reader, Action dispose) Subscribe()
-    {
-        var ch = Channel.CreateBounded<string>(new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest });
-        lock (gate) subs.Add(ch);
-        return (ch.Reader, () => { lock (gate) subs.Remove(ch); ch.Writer.TryComplete(); });
-    }
-
-    public void Publish(string type, object payload)
-    {
-        var msg = $"event: {type}\ndata: {JsonSerializer.Serialize(payload, Json)}\n\n";
-        lock (gate) foreach (var s in subs) s.Writer.TryWrite(msg);
-    }
-}
-
-/// Background simulator: one tick every 3 s while Live is ON.
-public sealed class LiveService(LiveHub hub) : BackgroundService
-{
-    public LiveSim Sim { get; } = new();
-    readonly object gate = new();
-
-    public object Control(Func<SqliteConnection, SqliteTransaction, object> f)
-    {
-        lock (gate) return Db.Write(f);
-    }
-
-    public void TurnOn()
-    {
-        lock (gate)
-        {
-            if (Sim.On) return;
-            using (var c = Db.Open()) Sim.Start(c);
-            Sim.On = true;
-        }
-        hub.Publish("state", Sim.State());
-    }
-
-    public void TurnOff()
-    {
-        lock (gate) Sim.On = false;
-        hub.Publish("state", Sim.State());
-    }
-
-    public void SetScenario(string s)
-    {
-        TurnOn();
-        lock (gate) using (var c = Db.Open()) Sim.SetScenario(c, s);
-        Tick(); // react immediately
-    }
-
-    public void Tick()
-    {
-        List<LiveEvent> evs;
-        lock (gate)
-        {
-            if (!Sim.On) return;
-            evs = Db.Write((c, tx) =>
-            {
-                var e = Sim.Tick(c, tx);
-                // simulated readings are kept short; notifications stay for the feed
-                Db.Exec(c, tx, "DELETE FROM live_events WHERE kind='reading' AND id < (SELECT COALESCE(MAX(id),0) - 3000 FROM live_events)");
-                return e;
-            });
-        }
-        hub.Publish("tick", new LiveTickMessage(Sim.State(), evs.Where(e => e.Kind == "reading").ToList(), evs.Where(e => e.Kind == "notification").ToList()));
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stop)
-    {
-        while (!stop.IsCancellationRequested)
-        {
-            try { await Task.Delay(3000, stop); } catch (TaskCanceledException) { break; }
-            try { Tick(); } catch (Exception e) { Console.Error.WriteLine("live tick failed: " + e.Message); }
-        }
-    }
 }

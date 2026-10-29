@@ -9,13 +9,13 @@ namespace BacchusLedger.Controllers;
 public sealed class DemoController(IDemoService demo) : ControllerBase
 {
     [HttpGet("demo/steps")]
-    public ActionResult<DemoStepsDto> Steps(string? script) => Ok(demo.Steps(script));
+    public async Task<ActionResult<DemoStepsDto>> Steps(string? script) => Ok(await demo.StepsAsync(script));
 
     [HttpPost("demo/step/{n:int}")]
-    public ActionResult<DemoCardDto> Step(int n, string? script) => this.ToActionResult(demo.Step(n, script));
+    public async Task<ActionResult<DemoCardDto>> Step(int n, string? script) => this.ToActionResult(await demo.StepAsync(n, script));
 
     [HttpPost("demo/reset")]
-    public ActionResult<DemoStepsDto> Reset(string? script) => Ok(demo.Reset(script));
+    public async Task<ActionResult<DemoStepsDto>> Reset(string? script) => Ok(await demo.ResetAsync(script));
 
     [HttpPost("try/w03")]
     public async Task<ActionResult<PracticeCopyResponse>> PracticeCopy() => Ok(await demo.CreatePracticeCopyAsync());

@@ -2,11 +2,15 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BacchusLedger.Extensions;
+using BacchusLedger.Options;
+using BacchusLedger.Repositories;
+using BacchusLedger.Services;
 using Microsoft.AspNetCore.Mvc.Formatters;
+using Microsoft.Extensions.Options;
 
 namespace BacchusLedger;
 
-public sealed class Startup
+public sealed class Startup(IConfiguration configuration)
 {
     public void ConfigureServices(IServiceCollection services)
     {
@@ -20,8 +24,31 @@ public sealed class Startup
                 o.OutputFormatters.RemoveType<StringOutputFormatter>();
             })
             .ConfigureApiBehaviorOptions(o => o.SuppressMapClientErrors = true)
-            .AddJsonOptions(o => ConfigureJson(o.JsonSerializerOptions));
+            .AddJsonOptions(o =>
+            {
+                o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+                o.JsonSerializerOptions.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
+            });
 
+        services.Configure<StorageOptions>(o =>
+        {
+            if (Env("DB_PATH") is { } db) o.DbPath = db;
+            o.ResetOnStart = string.Equals(Env("RESET_ON_START"), "true", StringComparison.OrdinalIgnoreCase);
+            if (Env("SIGNING_KEY_PATH") is { } key) o.SigningKeyPath = key;
+        });
+        services.Configure<AssistantOptions>(o =>
+        {
+            o.OpenAiKey = Env("OPENAI_API_KEY");
+            o.GeminiKey = Env("GEMINI_API_KEY");
+            o.OpenAiModel = Env("OPENAI_MODEL") ?? o.OpenAiModel;
+            o.GeminiModel = Env("GEMINI_MODEL") ?? o.GeminiModel;
+            o.Provider = string.Equals(Env("ASSISTANT_PROVIDER"), "gemini", StringComparison.OrdinalIgnoreCase) ? "gemini" : "openai";
+            o.Enabled = !string.Equals(Env("ASSISTANT_ENABLED"), "false", StringComparison.OrdinalIgnoreCase);
+        });
+        services.Configure<LiveOptions>(configuration.GetSection("Live"));
+
+        services.AddPersistence();
+        services.AddProviders();
         services.AddHealthFeature();
         services.AddOverviewFeature();
         services.AddBatchesFeature();
@@ -30,26 +57,24 @@ public sealed class Startup
         services.AddJournalsFeature();
         services.AddReportFeature();
         services.AddSealFeature();
+        services.AddLiveFeature();
         services.AddAssistantFeature();
         services.AddDemoFeature();
         services.AddSettingsFeature();
         services.AddSelfTestFeature();
-        services.AddLiveFeature();
     }
 
     public void Configure(WebApplication app)
     {
-        Db.Init(string.Equals(Environment.GetEnvironmentVariable("RESET_ON_START"), "true", StringComparison.OrdinalIgnoreCase));
-        Seal.EnsureAll(); // secure copy: hash chain + DEMO signature for every batch
+        var storage = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value;
+        app.Services.GetRequiredService<IDatabaseInitializer>().InitializeAsync(storage.ResetOnStart).GetAwaiter().GetResult();
+        app.Services.GetRequiredService<ISealService>().SealAllAsync().GetAwaiter().GetResult(); // hash chain + DEMO signature for every batch
 
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.MapControllers();
     }
 
-    static void ConfigureJson(JsonSerializerOptions o)
-    {
-        o.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
-        o.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
-    }
+    /// An environment variable (or other configuration value) with surrounding spaces removed; null when empty.
+    string? Env(string key) => configuration[key] is { } v && v.Trim().Length > 0 ? v.Trim() : null;
 }

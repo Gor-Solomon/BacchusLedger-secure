@@ -1,37 +1,33 @@
 using System.Globalization;
 using System.Text.Json;
 using BacchusLedger.Contracts.Settings;
+using BacchusLedger.Dataset;
+using BacchusLedger.Repositories;
 
 namespace BacchusLedger.Services;
 
-public sealed class SettingsService(LiveService live) : ISettingsService
+public sealed class SettingsService(ISettingsRepository settings, IUnitOfWork unitOfWork, IDatabaseInitializer database, ILiveControl live) : ISettingsService
 {
-    public Task<IReadOnlyDictionary<string, string>> GetAsync() => Task.FromResult<IReadOnlyDictionary<string, string>>(Db.Settings());
+    public async Task<IReadOnlyDictionary<string, string>> GetAsync() => await settings.GetAsync();
 
-    public Task<ServiceResult<IReadOnlyDictionary<string, string>>> SaveAsync(IReadOnlyDictionary<string, JsonElement> values)
+    public async Task<ServiceResult<IReadOnlyDictionary<string, string>>> SaveAsync(IReadOnlyDictionary<string, JsonElement> values)
     {
         foreach (var (k, v) in values)
         {
-            if (!Db.DefaultSettings.ContainsKey(k)) return Bad($"unknown setting {k}");
-            if (k != "language" && !double.TryParse(Text(v) ?? "", NumberStyles.Float, CultureInfo.InvariantCulture, out _)) return Bad($"{k} must be a number");
+            if (!SettingDefaults.Values.ContainsKey(k)) return ServiceResult<IReadOnlyDictionary<string, string>>.BadRequest($"unknown setting {k}");
+            if (k != "language" && !double.TryParse(Text(v) ?? "", NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                return ServiceResult<IReadOnlyDictionary<string, string>>.BadRequest($"{k} must be a number");
         }
-        Db.Write((c, tx) =>
-        {
-            foreach (var (k, v) in values)
-                Db.Exec(c, tx, "INSERT OR REPLACE INTO settings(key,value) VALUES($1,$2)", k, Text(v));
-            return 0;
-        });
-        var saved = Db.Settings();
-        live.Sim.UseSettings(saved);
-        return Task.FromResult(ServiceResult<IReadOnlyDictionary<string, string>>.Ok(saved));
-
-        static Task<ServiceResult<IReadOnlyDictionary<string, string>>> Bad(string e) => Task.FromResult(ServiceResult<IReadOnlyDictionary<string, string>>.BadRequest(e));
+        await unitOfWork.WriteAsync(async () => { await settings.SaveAsync(values.Select(kv => new KeyValuePair<string, string?>(kv.Key, Text(kv.Value)))); return 0; });
+        var saved = await settings.GetAsync();
+        live.UseSettings(saved);
+        return ServiceResult<IReadOnlyDictionary<string, string>>.Ok(saved);
     }
 
-    public Task<ResetResponse> ResetAsync()
+    public async Task<ResetResponse> ResetAsync()
     {
-        Db.Reseed();
-        return Task.FromResult(new ResetResponse(true));
+        await database.ResetAndSeedAsync();
+        return new ResetResponse(true);
     }
 
     static string? Text(JsonElement v) => v.ValueKind == JsonValueKind.Number ? v.GetDouble().ToString(CultureInfo.InvariantCulture) : v.GetString();

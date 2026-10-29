@@ -14,13 +14,13 @@ public sealed class LiveController(ILiveBoardService live) : ControllerBase
     public ActionResult<LiveStateDto> State() => Ok(live.State());
 
     [HttpPost("live/on")]
-    public ActionResult<LiveStateDto> On() => Ok(live.TurnOn());
+    public async Task<ActionResult<LiveStateDto>> On() => Ok(await live.TurnOnAsync());
 
     [HttpPost("live/off")]
-    public ActionResult<LiveStateDto> Off() => Ok(live.TurnOff());
+    public async Task<ActionResult<LiveStateDto>> Off() => Ok(await live.TurnOffAsync());
 
     [HttpPost("live/scenario/{name}")]
-    public ActionResult<LiveStateDto> Scenario(string name) => this.ToActionResult(live.SetScenario(name));
+    public async Task<ActionResult<LiveStateDto>> Scenario(string name) => this.ToActionResult(await live.SetScenarioAsync(name));
 
     [HttpGet("live/events")]
     public async Task<ActionResult<IReadOnlyList<LiveEventRowDto>>> Events(string? kind, string? vessel, int? limit) => Ok(await live.EventsAsync(kind, vessel, limit));

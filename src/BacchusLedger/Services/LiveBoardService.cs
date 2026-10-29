@@ -1,60 +1,63 @@
+using System.Text;
 using System.Text.Json;
 using BacchusLedger.Contracts.Common;
 using BacchusLedger.Contracts.Live;
 using BacchusLedger.Extensions;
+using BacchusLedger.Models;
+using BacchusLedger.Options;
+using BacchusLedger.Repositories;
+using Microsoft.Extensions.Options;
 
 namespace BacchusLedger.Services;
 
-public sealed class LiveBoardService(LiveService live, LiveHub hub) : ILiveBoardService
+public sealed class LiveBoardService(
+    ILiveControl live, ILiveHub hub, ILiveEventRepository events, IVesselRepository vessels, IUnitOfWork unitOfWork, IOptions<LiveOptions> options) : ILiveBoardService
 {
-    public LiveStateDto State() => live.Sim.State();
+    public LiveStateDto State() => live.State();
 
-    public LiveStateDto TurnOn()
+    public async Task<LiveStateDto> TurnOnAsync()
     {
-        live.TurnOn();
-        live.Tick();
-        return live.Sim.State();
+        await live.TurnOnAsync();
+        await live.TickAsync();
+        return live.State();
     }
 
-    public LiveStateDto TurnOff()
+    public async Task<LiveStateDto> TurnOffAsync()
     {
-        live.TurnOff();
-        return live.Sim.State();
+        await live.TurnOffAsync();
+        return live.State();
     }
 
-    public ServiceResult<LiveStateDto> SetScenario(string name)
+    public async Task<ServiceResult<LiveStateDto>> SetScenarioAsync(string name)
     {
-        if (!LiveSim.Scenarios.Contains(name)) return ServiceResult<LiveStateDto>.NotFound("unknown scenario");
-        live.SetScenario(name);
-        return live.Sim.State();
+        if (!LiveScenarios.All.Contains(name)) return ServiceResult<LiveStateDto>.NotFound("unknown scenario");
+        await live.SetScenarioAsync(name);
+        return live.State();
     }
 
-    public Task<IReadOnlyList<LiveEventRowDto>> EventsAsync(string? kind, string? vessel, int? limit) => Task.FromResult<IReadOnlyList<LiveEventRowDto>>(Db.Query("""
-        SELECT * FROM live_events WHERE ($1 IS NULL OR kind=$1) AND ($2 IS NULL OR vessel_code=$2) ORDER BY id DESC LIMIT $3
-        """, kind, vessel, Math.Clamp(limit ?? 50, 1, 500)).Select(e => new LiveEventRowDto((long)e["id"]!, e["created_at"] as string, e["sim_time"] as string, Db.L(e["vessel_id"]),
-            e["vessel_code"] as string, e["vessel_name"] as string, e["kind"] as string, e["metric"] as string, Db.D(e["value"]), e["unit"] as string, e["level"] as string,
-            e["rule"] as string, e["message"] as string, Db.D(e["value_usd"]), e["scenario"] as string, e["source"] as string, Db.L(e["acknowledged"]))).ToList());
+    public async Task<IReadOnlyList<LiveEventRowDto>> EventsAsync(string? kind, string? vessel, int? limit) =>
+        await events.ListAsync(kind, vessel, Math.Clamp(limit ?? 50, 1, 500));
 
-    public Task<IdResponse> AcknowledgeAsync(long id)
+    public async Task<IdResponse> AcknowledgeAsync(long id)
     {
-        Db.Write((c, tx) => Db.Exec(c, tx, "UPDATE live_events SET acknowledged=1 WHERE id=$1", id));
+        await unitOfWork.WriteAsync(async () => { await events.AcknowledgeAsync(id); return 0; });
         hub.Publish("ack", new IdResponse(id));
-        return Task.FromResult(new IdResponse(id));
+        return new IdResponse(id);
     }
 
-    public Task<OkResponse> AcknowledgeAllAsync()
+    public async Task<OkResponse> AcknowledgeAllAsync()
     {
-        Db.Write((c, tx) => Db.Exec(c, tx, "UPDATE live_events SET acknowledged=1 WHERE kind='notification'"));
+        await unitOfWork.WriteAsync(async () => { await events.AcknowledgeAllNotificationsAsync(); return 0; });
         hub.Publish("ack", new AckAllMessage(true));
-        return Task.FromResult(new OkResponse(true));
+        return new OkResponse(true);
     }
 
-    public Task<OkResponse> ClearAsync()
+    public async Task<OkResponse> ClearAsync()
     {
-        live.TurnOff();
-        Db.Write((c, tx) => Db.Exec(c, tx, "DELETE FROM live_events"));
+        await live.TurnOffAsync();
+        await unitOfWork.WriteAsync(async () => { await events.DeleteAllAsync(); return 0; });
         hub.Publish("cleared", new OkResponse(true));
-        return Task.FromResult(new OkResponse(true));
+        return new OkResponse(true);
     }
 
     public async Task StreamAsync(Func<string, Task> write, bool once, CancellationToken ct)
@@ -62,14 +65,14 @@ public sealed class LiveBoardService(LiveService live, LiveHub hub) : ILiveBoard
         var (reader, dispose) = hub.Subscribe();
         try
         {
-            await write($"retry: 3000\nevent: state\ndata: {JsonSerializer.Serialize(live.Sim.State(), LiveHub.Json)}\n\n");
+            await write($"retry: 3000\nevent: state\ndata: {hub.ToJson(live.State())}\n\n");
             if (once) return;
             while (!ct.IsCancellationRequested)
             {
                 var wait = reader.WaitToReadAsync(ct).AsTask();
-                if (await Task.WhenAny(wait, Task.Delay(15000, ct)) != wait) { await write(": keep-alive\n\n"); continue; }
+                if (await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(options.Value.KeepAliveSeconds), ct)) != wait) { await write(": keep-alive\n\n"); continue; }
                 if (!await wait) break;
-                var batch = new System.Text.StringBuilder();
+                var batch = new StringBuilder();
                 while (reader.TryRead(out var msg)) batch.Append(msg);
                 await write(batch.ToString());
             }
@@ -78,25 +81,28 @@ public sealed class LiveBoardService(LiveService live, LiveHub hub) : ILiveBoard
         finally { dispose(); }
     }
 
-    public Task<ServiceResult<SensorReadingResponse>> SensorReadingAsync(JsonElement body)
+    /// A real sensor feeds the same stream as the simulator; its events are tagged SENSOR, not SIMULATED.
+    public async Task<ServiceResult<SensorReadingResponse>> SensorReadingAsync(JsonElement body)
     {
         var code = body.RawStr("vessel");
-        if (code == null || body.Num("dip_cm") is not { } dip) return Task.FromResult(ServiceResult<SensorReadingResponse>.BadRequest("vessel and dip_cm are required"));
+        if (code == null || body.Num("dip_cm") is not { } dip) return ServiceResult<SensorReadingResponse>.BadRequest("vessel and dip_cm are required");
         LiveEvent? ev = null;
-        var res = Db.Write((c, tx) =>
+        var res = await unitOfWork.WriteAsync(async () =>
         {
-            var v = Db.VesselRow(c, code, null);
-            if (v == null) return ServiceResult<SensorReadingResponse>.NotFound("vessel not found");
-            var m = Calibration.TryParse(v["calibration_json"] as string);
+            if (await vessels.FindAsync(code, null) is not { } v) return ServiceResult<SensorReadingResponse>.NotFound("vessel not found");
+            var m = Calibration.TryParse(v.CalibrationJson);
             if (m == null) return ServiceResult<SensorReadingResponse>.BadRequest("Volume unknown — enter litres manually");
             var l = Math.Round(m.LitresAtDip(dip), 1);
-            Db.Exec(c, tx, "INSERT INTO sensor_readings(vessel_id,dip_cm,litres,created_at) VALUES($1,$2,$3,$4)", v["id"], dip, l, DateTime.UtcNow.ToString("o"));
-            ev = LiveSim.SensorEvent((long)v["id"]!, (string)v["code"]!, v["cellar_label"] as string, l);
-            ev.Id = Db.Insert(c, tx, "INSERT INTO live_events(created_at,sim_time,vessel_id,vessel_code,vessel_name,kind,metric,value,unit,source) VALUES($1,$2,$3,$4,$5,'reading','level',$6,'L','SENSOR')",
-                ev.CreatedAt, ev.SimTime, ev.VesselId, ev.VesselCode, ev.VesselName, l);
+            await events.InsertSensorReadingAsync(v.Id, dip, l, DateTime.UtcNow.ToString("o"));
+            ev = new LiveEvent
+            {
+                Kind = "reading", VesselId = v.Id, VesselCode = v.Code, VesselName = v.CellarLabel ?? v.Code, Metric = "level", Value = l, Unit = "L", Source = "SENSOR",
+                CreatedAt = DateTime.UtcNow.ToString("o"), SimTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm"),
+            };
+            ev.Id = await events.InsertAsync(ev);
             return ServiceResult<SensorReadingResponse>.Ok(new SensorReadingResponse(code, dip, l, "Calculated"));
         });
         if (ev != null) hub.Publish("sensor", ev);
-        return Task.FromResult(res);
+        return res;
     }
 }

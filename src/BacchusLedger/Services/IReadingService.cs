@@ -12,4 +12,10 @@ public interface IReadingService
     Task<ServiceResult<ReadingPreviewResponse>> PreviewAsync(JsonElement body);
 
     Task<ServiceResult<ReadingsSavedResponse>> SaveAsync(JsonElement body);
+
+    /// Saves one reading and returns its warnings.
+    Task<(long id, List<string> warnings)> InsertAsync(Readings.Input reading);
+
+    /// Warnings for a reading (e.g. Initial Brix after fermentation started).
+    Task<List<string>> WarningsAsync(Readings.Input reading);
 }

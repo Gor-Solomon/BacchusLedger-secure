@@ -12,4 +12,7 @@ public interface IAssistantService
 
     /// Never fails: errors become an "offline" answer. localBaseUrl is this server, used by the read-only tools.
     Task<AssistantAnswer> AskAsync(JsonElement body, string localBaseUrl);
+
+    /// The free question with the given options (the selftest passes "no keys").
+    Task<AssistantAnswer> AskAsync(string? question, Options.AssistantOptions options, Func<string, Task<System.Text.Json.Nodes.JsonNode?>> get);
 }

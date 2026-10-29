@@ -5,4 +5,10 @@ public interface IReportService
 {
     /// A ReportResponse, or a VesselReportResponse when only a vessel ("W01/F-2") is given.
     Task<ServiceResult<object>> GetAsync(string? batch, string? vessel);
+
+    /// ReportResponse, VesselReportResponse (no batch given) or null (batch not found).
+    Task<object?> BuildAsync(string? batchCode, string? vessel);
+
+    /// The double-entry ledger of one batch (null when the batch does not exist).
+    Task<LedgerReport.Ledger?> LedgerAsync(long batchId);
 }

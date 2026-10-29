@@ -8,9 +8,9 @@ namespace BacchusLedger.Services;
 public interface ILiveBoardService
 {
     LiveStateDto State();
-    LiveStateDto TurnOn();
-    LiveStateDto TurnOff();
-    ServiceResult<LiveStateDto> SetScenario(string name);
+    Task<LiveStateDto> TurnOnAsync();
+    Task<LiveStateDto> TurnOffAsync();
+    Task<ServiceResult<LiveStateDto>> SetScenarioAsync(string name);
     Task<IReadOnlyList<LiveEventRowDto>> EventsAsync(string? kind, string? vessel, int? limit);
     Task<IdResponse> AcknowledgeAsync(long id);
     Task<OkResponse> AcknowledgeAllAsync();
