@@ -123,7 +123,6 @@ public sealed class DemoService(
         }
     }
 
-    // ---------- writing helpers ----------
     async Task<long> DemoBatchAsync(string script) => await batches.FindIdAsync(BatchCode(script)) ?? 0;
 
     async Task OpAsync(string script, SeedOperation o, string source) =>
@@ -158,7 +157,6 @@ public sealed class DemoService(
 
     Task SetStatusAsync(string script, string status) => batches.SetStatusAsync(BatchCode(script), status);
 
-    // ---------- step definitions ----------
     StepDef[] Defs(string script) => script == "w03" ? W03Defs() : W01Defs();
 
     StepDef[] W01Defs() =>
