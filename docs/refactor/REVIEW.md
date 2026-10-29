@@ -198,5 +198,5 @@ dotnet build BacchusLedger.sln
 dotnet test BacchusLedger.sln
 powershell -File scripts/check.ps1        # or: bash scripts/check.sh
 docker compose up --build -d              # then open http://localhost:8081
-git log --oneline main..refactor/layers   # 29 commits, one per feature / step
+git log --oneline main..refactor/layers   # ~30 local commits, one per feature / step
 ```
