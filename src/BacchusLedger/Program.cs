@@ -11,8 +11,6 @@ var app = builder.Build();
 startup.Configure(app);
 
 // ---------------- helpers ----------------
-static bool IsCopy(Dictionary<string, object?> b) => Db.IsCopy(b);
-
 static Dictionary<string, object?>? BatchRow(SqliteConnection c, long id) =>
     Db.Query(c, "SELECT b.*, w.code AS winery_code, w.name AS winery_name FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE b.id=$1", id).FirstOrDefault();
 
@@ -24,55 +22,6 @@ static Dictionary<string, object?>? VesselRow(SqliteConnection c, string code, s
         ORDER BY v.code=$1 DESC, v.id
         """, code, winery).FirstOrDefault();
 
-static string CalibrationNote(Dictionary<string, object?> v, Calibration.Model? m, JsonNode? cj)
-{
-    var known = Db.D(v["known_volume_l"]);
-    if (m == null)
-        return known != null ? $"Known volume {known:N0} L (Entered). No measurements — dip → litres is not available; enter litres manually." : "Volume unknown — enter litres manually";
-    if (m.Kind == "cylinder")
-        return $"Cylinder Ø{m.D:0.#} × {m.H:0.#} cm" + ((string?)v["source"] == "DEMO ASSUMPTION" ? " — size is a DEMO ASSUMPTION" : " (Entered)");
-    if ((string?)cj?["model"] == "measured")
-        return $"A5 shape scaled to the entered measurements (depth {m.H:0.#} cm, neck Ø{Db.D(v["neck_d_cm"]):0.#}, max Ø{Db.D(v["max_d_cm"]):0.#})" +
-               (known != null ? $", radii scaled to the known volume {known:N0} L" : "");
-    return "generalised A5 model (demo)" + (known != null ? $" — known volume {known:N0} L entered; add depth and diameters to use your own shape" : "");
-}
-
-static object VesselOut(Dictionary<string, object?> v, Dictionary<string, List<object>>? contents = null)
-{
-    var m = Calibration.TryParse(v["calibration_json"] as string);
-    var cj = m == null ? null : JsonNode.Parse((string)v["calibration_json"]!)!;
-    var key = $"{v["winery_code"]}/{v["code"]}";
-    var list = contents != null && contents.TryGetValue(key, out var l) ? l : [];
-    var model = (string?)cj?["model"];
-    return new
-    {
-        id = v["id"], winery = v["winery_code"], code = v["code"], type = v["type"], name = v["name"], capacity_l = v["capacity_l"], source = v["source"],
-        cellar_label = v["cellar_label"], cellar_label_source = v["cellar_label_source"],
-        depth_cm = v["depth_cm"], neck_d_cm = v["neck_d_cm"], max_d_cm = v["max_d_cm"], known_volume_l = v["known_volume_l"],
-        calibrated = m != null, kind = m?.Kind ?? "none", model,
-        calibration_note = CalibrationNote(v, m, cj),
-        capacity_source = m == null ? (v["capacity_l"] != null ? "Entered" : null) : m.Kind == "cylinder" ? (string?)v["source"] : model == "measured" ? "Calculated" : "Dataset A5",
-        d_cm = m?.Kind == "cylinder" ? m.D : (double?)null, h_cm = m?.H,
-        raw_total_l = m?.Kind == "qvevri" ? (double?)cj!["raw_total_l"] : null, scale = m?.Kind == "qvevri" ? (double?)cj!["scale"] : null,
-        contents = list,
-        litres_now = list.Sum(x => (double)((dynamic)x).litres),
-    };
-}
-
-/// Optional qvevri measurements: depth + neck Ø + max Ø → own calibration (A5 shape scaled to them, and to the known volume if given).
-/// Otherwise no guess: no calibration, capacity = known volume (or unknown). The demo A5 qvevri keep their A5 model when no measurements are entered.
-static (string? json, double? capacity, string source) QvevriCalibration(Dictionary<string, object?> v, double? depth, double? neck, double? max, double? known)
-{
-    if (depth is > 0 && neck is > 0 && max is > 0)
-    {
-        var j = Calibration.QvevriJson(depth.Value, neck.Value, max.Value, known, "measured");
-        return (j, Math.Round(Calibration.Parse(j).Capacity, 1), "Entered");
-    }
-    var cur = v["calibration_json"] as string;
-    if (cur != null && (string?)JsonNode.Parse(cur)?["model"] == "A5" && (string?)v["source"] == "Dataset A5") return (cur, Db.D(v["capacity_l"]), "Dataset A5");
-    return (null, known, "Entered");
-}
-
 static double? JNum(JsonElement b, string k) => b.TryGetProperty(k, out var v) ? v.ValueKind switch
 {
     JsonValueKind.Number => v.GetDouble(),
@@ -81,24 +30,6 @@ static double? JNum(JsonElement b, string k) => b.TryGetProperty(k, out var v) ?
 } : null;
 static string? JStr(JsonElement b, string k) => b.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() : null;
 static bool JBool(JsonElement b, string k) => b.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
-
-/// Litres per vessel across all batches (replay of each batch).
-static Dictionary<string, List<object>> VesselContents(SqliteConnection c, Dictionary<string, string> s)
-{
-    var d = new Dictionary<string, List<object>>();
-    foreach (var b in Db.Query(c, "SELECT b.id, b.code, b.source_note, w.code AS winery FROM batches b JOIN wineries w ON w.id=b.winery_id"))
-    {
-        var r = LossEngine.Analyze(c, (long)b["id"]!, s, compare: false);
-        foreach (var (v, l) in r.VesselLitres)
-        {
-            var key = $"{b["winery"]}/{v}";
-            if (!d.TryGetValue(key, out var list)) d[key] = list = [];
-            list.Add(new { batch = b["code"], batch_id = b["id"], litres = l, copy = IsCopy(b) });
-        }
-    }
-    return d;
-}
-
 
 // "Try: W03 filtration with dip 35.0 cm" — a fresh copy of W03 batch 3 up to the stock check
 app.MapPost("/api/try/w03", () => Db.Write((c, tx) =>
@@ -111,110 +42,6 @@ app.MapPost("/api/try/w03", () => Db.Write((c, tx) =>
         Db.Exec(c, tx, "INSERT INTO batch_origins(batch_id,delivery_id,kg) VALUES($1,$2,$3)", id, o["delivery_id"], o["kg"]);
     foreach (var o in Seed.W03Ops.Take(4)) Seed.InsertOp(c, tx, id, "W03", o, "Dataset A6.1");
     return Results.Ok(new { batch_id = id, code });
-}));
-
-// ---------------- vessels ----------------
-app.MapGet("/api/vessels", () =>
-{
-    using var c = Db.Open();
-    var contents = VesselContents(c, Db.Settings());
-    return Db.Query(c, "SELECT v.*, w.code AS winery_code FROM vessels v JOIN wineries w ON w.id=v.winery_id ORDER BY w.code, v.id").Select(v => VesselOut(v, contents)).ToList();
-});
-app.MapGet("/api/vessels/{code}", (string code, string? winery) =>
-{
-    using var c = Db.Open();
-    var v = VesselRow(c, code, winery);
-    if (v == null) return Results.NotFound(new { error = "vessel not found" });
-    var m = Calibration.TryParse(v["calibration_json"] as string);
-    // Inner shape for drawing: [z_cm, radius_cm]
-    List<double[]>? profile = null;
-    if (m?.Kind == "qvevri")
-    {
-        var t = JsonNode.Parse((string)v["calibration_json"]!)!["table"]!.AsArray();
-        profile = t.Where((r, i) => (double)r![0]! % 5 == 0 || i == t.Count - 1).Select(r => new[] { (double)r![0]!, (double)r![1]! }).ToList();
-    }
-    else if (m != null) profile = [[0, m.D / 2], [m.H, m.D / 2]];
-    // Batches that used this vessel, most recent first (default batch for a reading)
-    var batches = Db.Query(c, """
-        SELECT b.id, b.code, MAX(x.d) AS last FROM batches b JOIN (
-          SELECT batch_id, date AS d FROM operations WHERE from_vessel_id=$1 OR to_vessel_id=$1
-          UNION ALL SELECT batch_id, taken_at FROM readings WHERE vessel_id=$1
-          UNION ALL SELECT batch_id, date FROM lab WHERE vessel_id=$1) x ON x.batch_id=b.id
-        GROUP BY b.id ORDER BY last DESC, (b.source_note LIKE '%copy%'), b.id
-        """, v["id"]);
-    return Results.Ok(new { vessel = VesselOut(v, VesselContents(c, Db.Settings())), chart = m == null ? [] : Calibration.DipChart(m, 5), profile, batches });
-});
-app.MapGet("/api/vessels/{code}/litres", (string code, double? dip, double? litres, string? winery) =>
-{
-    using var c = Db.Open();
-    var v = VesselRow(c, code, winery);
-    if (v == null) return Results.NotFound(new { error = "vessel not found" });
-    var m = Calibration.TryParse(v["calibration_json"] as string);
-    if (m == null) return Results.BadRequest(new { error = "Volume unknown — enter litres manually" });
-    if (dip is { } d)
-    {
-        if (d < 0 || d > m.H) return Results.BadRequest(new { error = $"dip must be 0–{m.H} cm" });
-        return Results.Ok(new { vessel = code, dip_cm = d, fill_cm = m.H - d, litres = Math.Round(m.LitresAtDip(d), 1), capacity_l = Math.Round(m.Capacity, 1), source = "Calculated" });
-    }
-    if (litres is { } l) return Results.Ok(new { vessel = code, litres = l, dip_cm = Math.Round(m.DipForLitres(l), 1), capacity_l = Math.Round(m.Capacity, 1), source = "Calculated" });
-    return Results.BadRequest(new { error = "pass ?dip= or ?litres=" });
-});
-
-// Add a vessel (e.g. a new qvevri with optional measurements)
-app.MapPost("/api/vessels", (JsonElement body) =>
-{
-    var winery = JStr(body, "winery"); var code = JStr(body, "code"); var type = JStr(body, "type") ?? "qvevri";
-    if (string.IsNullOrEmpty(winery) || string.IsNullOrEmpty(code)) return Results.BadRequest(new { error = "Winery and code are required" });
-    if (type is not ("tank" or "qvevri")) return Results.BadRequest(new { error = "Type must be tank or qvevri" });
-    var src = JBool(body, "live_demo") ? "Entered (live demo)" : "Entered";
-    double? depth = JNum(body, "depth_cm"), neck = JNum(body, "neck_d_cm"), max = JNum(body, "max_d_cm"), known = JNum(body, "known_volume_l");
-    double? dCm = JNum(body, "d_cm"), hCm = JNum(body, "h_cm");
-    if (new[] { depth, neck, max, known, dCm, hCm }.Any(x => x is <= 0)) return Results.BadRequest(new { error = "Measurements must be positive (or empty)" });
-    try
-    {
-        return Db.Write((c, tx) =>
-        {
-            if (Db.Query(c, "SELECT 1 FROM vessels v JOIN wineries w ON w.id=v.winery_id WHERE w.code=$1 AND v.code=$2", winery, code).Count > 0)
-                return Results.BadRequest(new { error = $"Vessel {code} already exists at {winery}" });
-            string? json = null; double? cap = known;
-            if (type == "qvevri") (json, cap, _) = QvevriCalibration(new() { ["calibration_json"] = null, ["source"] = src, ["capacity_l"] = null }, depth, neck, max, known);
-            else if (dCm != null && hCm != null) { json = Calibration.CylinderJson(dCm.Value, hCm.Value); cap = Math.Round(Calibration.CylinderLitres(dCm.Value, hCm.Value), 1); }
-            var label = JStr(body, "cellar_label");
-            var id = Db.Insert(c, tx, """
-                INSERT INTO vessels(winery_id,code,type,name,calibration_json,capacity_l,source,cellar_label,cellar_label_source,depth_cm,neck_d_cm,max_d_cm,known_volume_l)
-                VALUES((SELECT id FROM wineries WHERE code=$1),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-                """, winery, code, type, JStr(body, "name") is { Length: > 0 } n ? n : (type == "qvevri" ? $"Qvevri {code}" : $"Tank {code}"), json, cap, src,
-                string.IsNullOrEmpty(label) ? null : label, string.IsNullOrEmpty(label) ? null : src, depth, neck, max, known);
-            return Results.Ok(new { id, code, winery });
-        });
-    }
-    catch (SqliteException e) { return Results.BadRequest(new { error = e.Message }); }
-});
-
-// Cellar label + optional qvevri measurements (vessels are master data, not records — they can be edited)
-app.MapPost("/api/vessels/{code}/details", (string code, string? winery, JsonElement body) => Db.Write((c, tx) =>
-{
-    var v = VesselRow(c, code, winery);
-    if (v == null) return Results.NotFound(new { error = "vessel not found" });
-    var src = JBool(body, "live_demo") ? "Entered (live demo)" : "Entered";
-    if (body.TryGetProperty("cellar_label", out _))
-    {
-        var label = JStr(body, "cellar_label");
-        if (!string.IsNullOrEmpty(label) && Db.Query(c, "SELECT 1 FROM vessels WHERE winery_id=$1 AND id<>$2 AND lower(trim(cellar_label))=lower($3)", v["winery_id"], v["id"], label).Count > 0)
-            return Results.BadRequest(new { error = $"Cellar label {label} is already used by another vessel at {v["winery_code"]}" });
-        Db.Exec(c, tx, "UPDATE vessels SET cellar_label=$1, cellar_label_source=$2 WHERE id=$3",
-            string.IsNullOrEmpty(label) ? null : label, string.IsNullOrEmpty(label) ? null : src, v["id"]);
-    }
-    string[] meas = ["depth_cm", "neck_d_cm", "max_d_cm", "known_volume_l"];
-    if ((string)v["type"]! == "qvevri" && meas.Any(k => body.TryGetProperty(k, out _)))
-    {
-        double? depth = JNum(body, "depth_cm"), neck = JNum(body, "neck_d_cm"), max = JNum(body, "max_d_cm"), known = JNum(body, "known_volume_l");
-        if (new[] { depth, neck, max, known }.Any(x => x is <= 0)) return Results.BadRequest(new { error = "Measurements must be positive (or empty)" });
-        var (json, cap, csrc) = QvevriCalibration(v, depth, neck, max, known);
-        Db.Exec(c, tx, "UPDATE vessels SET depth_cm=$1, neck_d_cm=$2, max_d_cm=$3, known_volume_l=$4, calibration_json=$5, capacity_l=$6, source=$7 WHERE id=$8",
-            depth, neck, max, known, json, cap, (string?)v["source"] == "Entered (live demo)" ? v["source"] : csrc, v["id"]);
-    }
-    return Results.Ok(new { ok = true });
 }));
 
 // ---------------- readings (Update 2) ----------------
@@ -393,73 +220,6 @@ app.MapGet("/api/live/stream", async (HttpContext ctx, LiveHub hub, LiveService 
     }
     catch (OperationCanceledException) { }
     finally { dispose(); }
-});
-
-// ---------------- Cellar map (Update 3) ----------------
-// Litres per vessel on a date, replaying the real (non-copy) batches; vessels holding grapes between intake and separation are marked.
-app.MapGet("/api/cellar", (string? date) =>
-{
-    using var c = Db.Open();
-    var s = Db.Settings();
-    var day = date is { Length: 10 } ? date : DateTime.Now.ToString("yyyy-MM-dd");
-    var batches = Db.Query(c, "SELECT b.*, w.code AS winery_code FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE COALESCE(b.source_note,'') NOT LIKE '%copy%'");
-    var litres = new Dictionary<string, List<object>>();
-    var attention = new Dictionary<string, string>();
-    var grapes = new Dictionary<string, object>();
-    var opDates = new SortedSet<string>();
-    var totals = new SortedDictionary<string, double>();
-    foreach (var b in batches)
-    {
-        var ops = LossEngine.LoadOps(c, (long)b["id"]!);
-        foreach (var o in ops) opDates.Add(o.Date);
-        var r = LossEngine.Replay(ops.Where(o => string.CompareOrdinal(o.Date, day) <= 0).ToList(), LossEngine.Norms(s), Db.SettingD(s, "value_per_litre_usd"));
-        foreach (var (v, l) in r.VesselLitres)
-        {
-            var key = $"{b["winery_code"]}/{v}";
-            if (!litres.TryGetValue(key, out var list)) litres[key] = list = [];
-            list.Add(new { batch = b["code"], batch_id = b["id"], litres = l, source = r.Stages.LastOrDefault(x => x.To == v || x.From == v)?.Source });
-        }
-        foreach (var st in r.Stages.Where(x => x.Status is "above" or "negative"))
-            foreach (var v in new[] { st.From, st.To }.Where(x => x != null))
-                attention[$"{b["winery_code"]}/{v}"] = $"{b["code"]}: {st.StageKey.Replace('_', ' ')} {st.LossPct:0.00}% ({(st.Status == "above" ? "above normal" : "check the reading")})";
-        var intake = ops.Where(o => o.Type == "intake" && o.ToCode != null && string.CompareOrdinal(o.Date, day) <= 0).LastOrDefault();
-        if (intake != null && !ops.Any(o => o.Type == "separation" && o.FromCode == intake.ToCode && string.CompareOrdinal(o.Date, day) <= 0))
-            grapes[$"{b["winery_code"]}/{intake.ToCode}"] = new { batch = b["code"], batch_id = b["id"], kg = b["grapes_kg"], since = intake.Date, source = intake.Source };
-    }
-    // total litres in the cellar per operation date (to find the fullest day for the overview)
-    foreach (var d in opDates)
-    {
-        double tot = 0;
-        foreach (var b in batches)
-            tot += LossEngine.Replay(LossEngine.LoadOps(c, (long)b["id"]!).Where(o => string.CompareOrdinal(o.Date, d) <= 0).ToList(), LossEngine.Norms(s), 0).LitresNow;
-        totals[d] = Math.Round(tot, 1);
-    }
-    var vessels = Db.Query(c, "SELECT v.*, w.code AS winery_code FROM vessels v JOIN wineries w ON w.id=v.winery_id ORDER BY w.code, v.type DESC, v.id").Select(v =>
-    {
-        var key = $"{v["winery_code"]}/{v["code"]}";
-        var m = Calibration.TryParse(v["calibration_json"] as string);
-        // outline for drawing: radius / max radius at z / H (A5 profile for qvevri; generalised A5 shape when a qvevri has no measurements — drawing only)
-        var model = m?.Kind == "qvevri" ? m : (string)v["type"]! == "qvevri" ? Calibration.Parse(Calibration.QvevriJson()) : null;
-        List<double[]>? outline = null;
-        if (model != null)
-        {
-            var t = JsonNode.Parse(m?.Kind == "qvevri" ? (string)v["calibration_json"]! : Calibration.QvevriJson())!["table"]!.AsArray();
-            double rmax = t.Max(r => (double)r![1]!), h = model.H;
-            outline = t.Where((r, i) => (double)r![0]! % 10 == 0 || i == t.Count - 1).Select(r => new[] { Math.Round((double)r![0]! / h, 4), Math.Round((double)r![1]! / rmax, 4) }).ToList();
-        }
-        var list = litres.GetValueOrDefault(key) ?? [];
-        double now = list.Sum(x => (double)((dynamic)x).litres);
-        return new
-        {
-            id = v["id"], winery = v["winery_code"], code = v["code"], cellar_label = v["cellar_label"], name = v["name"], type = v["type"],
-            capacity_l = v["capacity_l"], capacity_source = m == null ? null : m.Kind == "cylinder" ? v["source"] : "Dataset A5", calibrated = m != null,
-            d_cm = m?.Kind == "cylinder" ? m.D : (double?)null, h_cm = m?.H, outline,
-            litres = Math.Round(now, 1), contents = list, grapes = grapes.GetValueOrDefault(key),
-            status = attention.ContainsKey(key) ? "amber" : "ok", status_reason = attention.GetValueOrDefault(key),
-        };
-    }).ToList();
-    var peak = totals.Count == 0 ? day : totals.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First().Key;
-    return Results.Ok(new { date = day, vessels, dates = opDates, totals, peak_date = peak, peak_litres = totals.GetValueOrDefault(peak) });
 });
 
 // Which of the 8 journals have rows (for the coverage tiles)

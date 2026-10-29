@@ -1,0 +1,27 @@
+namespace BacchusLedger.Contracts.Vessels;
+
+public sealed record VesselDto(
+    long Id,
+    string? Winery,
+    string? Code,
+    string? Type,
+    string? Name,
+    double? CapacityL,
+    string? Source,
+    string? CellarLabel,
+    string? CellarLabelSource,
+    double? DepthCm,
+    double? NeckDCm,
+    double? MaxDCm,
+    double? KnownVolumeL,
+    bool Calibrated,
+    string Kind,
+    string? Model,
+    string CalibrationNote,
+    string? CapacitySource,
+    double? DCm,
+    double? HCm,
+    double? RawTotalL,
+    double? Scale,
+    IReadOnlyList<VesselContentDto> Contents,
+    double LitresNow);

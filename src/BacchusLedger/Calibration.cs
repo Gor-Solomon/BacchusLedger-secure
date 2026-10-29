@@ -124,11 +124,13 @@ public static class Calibration
     }
 
     /// Printable dip chart every `step` cm.
-    public static List<object> DipChart(Model m, int step = 5)
+    public static List<DipChartPoint> DipChart(Model m, int step = 5)
     {
-        var rows = new List<object>();
+        var rows = new List<DipChartPoint>();
         for (int u = 0; u <= (int)m.H; u += step)
-            rows.Add(new { dip_cm = u, fill_cm = m.H - u, litres = Math.Round(m.LitresAtDip(u), 1) });
+            rows.Add(new(u, m.H - u, Math.Round(m.LitresAtDip(u), 1)));
         return rows;
     }
+
+    public sealed record DipChartPoint(int DipCm, double FillCm, double Litres);
 }
