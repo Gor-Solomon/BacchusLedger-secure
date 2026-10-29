@@ -86,44 +86,14 @@ public static class Readings
         return (id, warnings);
     }
 
-    /// Calculated values for one reading given the Initial Brix of its vessel/batch.
-    public static object Calc(string type, double value, double? brix) => type switch
+    /// Calculated values for one reading given the Initial Brix of its vessel/batch (all null when nothing applies).
+    public static CalcResult Calc(string type, double value, double? brix) => type switch
     {
-        "initial_brix" => new { potential_abv = PotentialAbv(value), sg = Math.Round(BrixToSg(value), 4), formula = FormulaPotential + " · " + FormulaSg },
+        "initial_brix" => new(PotentialAbv(value), Math.Round(BrixToSg(value), 4), null, FormulaPotential + " · " + FormulaSg),
         "hydrometer_abv" when brix is { } b && PotentialAbv(b) > 0 =>
-            new { potential_abv = PotentialAbv(b), progress_pct = ProgressPct(value, PotentialAbv(b)), formula = FormulaProgress + " · " + FormulaPotential },
-        _ => (object)new { },
+            new(PotentialAbv(b), null, ProgressPct(value, PotentialAbv(b)), FormulaProgress + " · " + FormulaPotential),
+        _ => new(null, null, null, null),
     };
 
-    public static object List(SqliteConnection c, long? batch, long? vessel)
-    {
-        var rows = Db.Query(c, """
-            SELECT r.*, b.code AS batch_code, v.code AS vessel_code, v.cellar_label, w.code AS winery
-            FROM readings r JOIN batches b ON b.id=r.batch_id JOIN wineries w ON w.id=b.winery_id LEFT JOIN vessels v ON v.id=r.vessel_id
-            WHERE ($1 IS NULL OR r.batch_id=$1) AND ($2 IS NULL OR r.vessel_id=$2) ORDER BY r.taken_at, r.id
-            """, batch, vessel);
-        // Initial Brix per vessel/batch: latest entry (corrections are new rows)
-        var brix = new Dictionary<string, Dictionary<string, object?>>();
-        foreach (var r in rows.Where(r => (string)r["type"]! == "initial_brix")) brix[$"{r["batch_id"]}/{r["vessel_id"]}"] = r;
-        foreach (var r in rows)
-        {
-            double? b = brix.TryGetValue($"{r["batch_id"]}/{r["vessel_id"]}", out var br) ? Db.D(br["value"]) : null;
-            r["calc"] = Calc((string)r["type"]!, Db.D(r["value"])!.Value, b);
-            r["time_in_dataset"] = !((r["note"] as string ?? "").StartsWith(Seed.NoTime));
-        }
-        var starts = brix.Values.Select(r =>
-        {
-            double v = Db.D(r["value"])!.Value;
-            return new { batch_id = r["batch_id"], batch_code = r["batch_code"], vessel_code = r["vessel_code"], cellar_label = r["cellar_label"], taken_at = r["taken_at"],
-                initial_brix = v, potential_abv = PotentialAbv(v), start_sg = Math.Round(BrixToSg(v), 4), source = r["source"] };
-        }).ToList();
-        // Initial sugar from the lab (Dataset A3 gives g/L, not Brix — shown as is, never converted)
-        var sugar = batch == null && vessel == null ? [] : Db.Query(c, """
-            SELECT l.date, l.sugar_gl, l.source, b.code AS batch_code FROM lab l JOIN batches b ON b.id=l.batch_id
-            WHERE l.sugar_gl IS NOT NULL AND ($1 IS NULL OR l.batch_id=$1) AND ($2 IS NULL OR l.vessel_id=$2)
-              AND l.date=(SELECT MIN(l2.date) FROM lab l2 WHERE l2.batch_id=l.batch_id AND l2.sugar_gl IS NOT NULL)
-            ORDER BY b.code
-            """, batch, vessel);
-        return new { rows, initial_brix = starts, initial_sugar = sugar, formulas = new { potential = FormulaPotential, progress = FormulaProgress, sg = FormulaSg } };
-    }
+    public sealed record CalcResult(double? PotentialAbv, double? Sg, double? ProgressPct, string? Formula);
 }

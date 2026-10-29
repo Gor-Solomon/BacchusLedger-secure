@@ -11,9 +11,6 @@ var app = builder.Build();
 startup.Configure(app);
 
 // ---------------- helpers ----------------
-static Dictionary<string, object?>? BatchRow(SqliteConnection c, long id) =>
-    Db.Query(c, "SELECT b.*, w.code AS winery_code, w.name AS winery_name FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE b.id=$1", id).FirstOrDefault();
-
 /// Find a vessel by internal code or by its cellar label (what is written on the tape in the cellar).
 static Dictionary<string, object?>? VesselRow(SqliteConnection c, string code, string? winery) =>
     Db.Query(c, """
@@ -21,15 +18,6 @@ static Dictionary<string, object?>? VesselRow(SqliteConnection c, string code, s
         WHERE (v.code=$1 OR (COALESCE(v.cellar_label,'')<>'' AND lower(trim(v.cellar_label))=lower(trim($1)))) AND ($2 IS NULL OR w.code=$2)
         ORDER BY v.code=$1 DESC, v.id
         """, code, winery).FirstOrDefault();
-
-static double? JNum(JsonElement b, string k) => b.TryGetProperty(k, out var v) ? v.ValueKind switch
-{
-    JsonValueKind.Number => v.GetDouble(),
-    JsonValueKind.String when double.TryParse(v.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) => d,
-    _ => null,
-} : null;
-static string? JStr(JsonElement b, string k) => b.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()?.Trim() : null;
-static bool JBool(JsonElement b, string k) => b.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
 
 // "Try: W03 filtration with dip 35.0 cm" — a fresh copy of W03 batch 3 up to the stock check
 app.MapPost("/api/try/w03", () => Db.Write((c, tx) =>
@@ -43,71 +31,6 @@ app.MapPost("/api/try/w03", () => Db.Write((c, tx) =>
     foreach (var o in Seed.W03Ops.Take(4)) Seed.InsertOp(c, tx, id, "W03", o, "Dataset A6.1");
     return Results.Ok(new { batch_id = id, code });
 }));
-
-// ---------------- readings (Update 2) ----------------
-(List<Readings.Input>? items, string? error) ReadingInputs(SqliteConnection c, JsonElement body)
-{
-    if (JNum(body, "batch_id") is not { } bid || BatchRow(c, (long)bid) is not { } b) return (null, "Choose a batch");
-    long? vesselId = null;
-    if (JStr(body, "vessel") is { Length: > 0 } vc)
-    {
-        var v = VesselRow(c, vc, (string)b["winery_code"]!);
-        if (v == null) return (null, $"Vessel {vc} not found at {b["winery_code"]}");
-        vesselId = (long)v["id"]!;
-    }
-    var takenAt = JStr(body, "taken_at") is { Length: >= 16 } ta ? ta[..16] : DateTime.Now.ToString("yyyy-MM-ddTHH:mm");
-    var source = JBool(body, "live_demo") ? "Entered (live demo)" : "Entered";
-    if (!body.TryGetProperty("readings", out var arr) || arr.ValueKind != JsonValueKind.Array) return (null, "No readings");
-    var list = new List<Readings.Input>();
-    foreach (var it in arr.EnumerateArray())
-    {
-        if (JNum(it, "value") is not { } val) continue; // empty field = not measured
-        var r = new Readings.Input((long)bid, vesselId, takenAt, JStr(it, "type") ?? "", val,
-            JStr(body, "instrument") is { Length: > 0 } ins ? ins : null, JStr(body, "person"), JStr(body, "note"), source);
-        if (Readings.Validate(r) is { } err) return (null, err);
-        list.Add(r);
-    }
-    return list.Count == 0 ? (null, "Enter a value") : (list, null);
-}
-
-static object ReadingResult(SqliteConnection c, Readings.Input r, List<string> warnings, long? id = null)
-{
-    // ABV entered together with density uses the Initial Brix of the same vessel/batch
-    double? brix = r.Type == "initial_brix" ? r.Value : Readings.LatestBrix(c, r.BatchId, r.VesselId);
-    return new { id, type = r.Type, value = r.Value, unit = Readings.Units[r.Type], calc = Readings.Calc(r.Type, r.Value, brix), warnings, source = r.Source };
-}
-
-app.MapGet("/api/readings", (long? batch, string? vessel, string? winery) =>
-{
-    using var c = Db.Open();
-    long? vid = null;
-    if (!string.IsNullOrEmpty(vessel))
-    {
-        if (VesselRow(c, vessel, winery) is not { } v) return Results.NotFound(new { error = "vessel not found" });
-        vid = (long)v["id"]!;
-    }
-    return Results.Ok(Readings.List(c, batch, vid));
-});
-
-app.MapPost("/api/readings/preview", (JsonElement body) =>
-{
-    using var c = Db.Open();
-    var (items, err) = ReadingInputs(c, body);
-    if (items == null) return Results.BadRequest(new { error = err });
-    return Results.Ok(new { items = items.Select(r => ReadingResult(c, r, Readings.Warnings(c, r))).ToList() });
-});
-
-app.MapPost("/api/readings", (JsonElement body) =>
-{
-    string? error = null;
-    var saved = Db.Write((c, tx) =>
-    {
-        var (items, err) = ReadingInputs(c, body);
-        if (items == null) { error = err; return []; }
-        return items.Select(r => { var (id, w) = Readings.Insert(c, tx, r); return ReadingResult(c, r, w, id); }).ToList();
-    });
-    return error != null ? Results.BadRequest(new { error }) : Results.Ok(new { saved });
-});
 
 // Third demo player: a clean live-demo batch on F-2 (or a new empty qvevri). Nothing is invented — the presenter types every value.
 app.MapPost("/api/demo/readings/start", (string? vessel) => Db.Write((c, tx) =>

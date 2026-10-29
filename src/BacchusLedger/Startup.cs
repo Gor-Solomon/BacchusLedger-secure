@@ -27,6 +27,7 @@ public sealed class Startup
         services.AddOverviewFeature();
         services.AddBatchesFeature();
         services.AddVesselsFeature();
+        services.AddReadingsFeature();
         services.AddLiveFeature();
     }
 

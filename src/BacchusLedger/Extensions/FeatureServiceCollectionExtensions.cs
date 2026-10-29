@@ -20,6 +20,9 @@ public static class FeatureServiceCollectionExtensions
         services.AddSingleton<IVesselService, VesselService>()
             .AddSingleton<ICellarService, CellarService>();
 
+    public static IServiceCollection AddReadingsFeature(this IServiceCollection services) =>
+        services.AddSingleton<IReadingService, ReadingService>();
+
     public static IServiceCollection AddLiveFeature(this IServiceCollection services)
     {
         services.AddSingleton<LiveHub>();
