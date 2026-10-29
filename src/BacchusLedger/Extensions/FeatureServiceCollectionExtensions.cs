@@ -38,6 +38,12 @@ public static class FeatureServiceCollectionExtensions
     public static IServiceCollection AddDemoFeature(this IServiceCollection services) =>
         services.AddSingleton<IDemoService, DemoService>();
 
+    public static IServiceCollection AddSettingsFeature(this IServiceCollection services) =>
+        services.AddSingleton<ISettingsService, SettingsService>();
+
+    public static IServiceCollection AddSelfTestFeature(this IServiceCollection services) =>
+        services.AddSingleton<ISelfTestService, SelfTestService>();
+
     public static IServiceCollection AddLiveFeature(this IServiceCollection services)
     {
         services.AddSingleton<LiveHub>();

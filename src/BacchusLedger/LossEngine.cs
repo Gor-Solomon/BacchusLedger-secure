@@ -274,7 +274,7 @@ public static class SelfTest
         Id = id, Date = o.Date, Type = o.Type, FromCode = o.From, ToCode = o.To, Litres = o.Litres, Bottles = o.Bottles, Ml = o.Ml, Remainder = o.Remainder,
     };
 
-    public static object Run(string? baseUrl = null, string? webRoot = null)
+    public static Contracts.SelfTest.SelfTestResponse Run(string? baseUrl = null, string? webRoot = null)
     {
         var items = new List<Item>();
         void Add(string g, string n, string exp, string act, bool ok) => items.Add(new(g, n, exp, act, ok));
@@ -425,7 +425,9 @@ public static class SelfTest
         LedgerSelfTest.Run(Add);
         SealSelfTest.Run(Add);
 
-        return new { pass = items.All(i => i.Pass), passed = items.Count(i => i.Pass), total = items.Count, note = "Loss checks use the dataset rows and the default DEMO ASSUMPTION norms. Reading and live probes run in a rolled-back transaction. Assistant checks never call an AI provider.", checks = items };
+        return new(items.All(i => i.Pass), items.Count(i => i.Pass), items.Count,
+            "Loss checks use the dataset rows and the default DEMO ASSUMPTION norms. Reading and live probes run in a rolled-back transaction. Assistant checks never call an AI provider.",
+            items.Select(i => new Contracts.SelfTest.SelfTestCheckDto(i.Group, i.Name, i.Expected, i.Actual, i.Pass)).ToList());
     }
 
     /// Everything the record (journals, batch loss totals, ROI) shows — must be identical with Live ON and OFF.

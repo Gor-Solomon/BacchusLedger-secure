@@ -13,7 +13,6 @@ public sealed class Startup
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
-        services.ConfigureHttpJsonOptions(o => ConfigureJson(o.SerializerOptions));
         services.AddControllers(o =>
             {
                 // Same output as the former minimal API: null is written as JSON null, strings as JSON strings.
@@ -33,6 +32,8 @@ public sealed class Startup
         services.AddSealFeature();
         services.AddAssistantFeature();
         services.AddDemoFeature();
+        services.AddSettingsFeature();
+        services.AddSelfTestFeature();
         services.AddLiveFeature();
     }
 
