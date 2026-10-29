@@ -30,7 +30,7 @@ public static class DependencyInjection
         .AddScoped<IUnitOfWork, EfUnitOfWork>()
         .AddScoped<IWineryRepository, EfWineryRepository>()
         .AddScoped<IBatchRepository, EfBatchRepository>()
-        .AddScoped<IVesselRepository, SqliteVesselRepository>()
+        .AddScoped<IVesselRepository, EfVesselRepository>()
         .AddScoped<IOperationRepository, SqliteOperationRepository>()
         .AddScoped<IOriginRepository, SqliteOriginRepository>()
         .AddScoped<ILabRepository, SqliteLabRepository>()
