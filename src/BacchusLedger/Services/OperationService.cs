@@ -7,6 +7,7 @@ using BacchusLedger.Repositories;
 using BacchusLedger.Services.Mapping;
 using BacchusLedger.Domain.Vessels;
 using BacchusLedger.Domain.Losses;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services;
 
@@ -88,7 +89,7 @@ public sealed class OperationService(
             if (dip == null) return (null, "Enter the dip reading (cm)", null, 0);
             var dv = type == "stock_check" ? from! : to!;
             var m = VesselCalibration.TryParse(dv.CalibrationJson);
-            if (m == null) return (null, $"{Fmt.Vessel(dv.Code, dv.CellarLabel)}: Volume unknown — enter litres manually", null, 0);
+            if (m == null) return (null, $"{dv.Code.WithCellarLabel(dv.CellarLabel)}: Volume unknown — enter litres manually", null, 0);
             if (dip < 0 || dip > m.HeightCm) return (null, $"Dip must be between 0 and {m.HeightCm} cm for {dv.Code}", null, 0);
             double total = m.LitresAtDip(dip.Value);
             double already = 0;

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using BacchusLedger.Contracts.Journals;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services;
 
@@ -82,7 +83,7 @@ public sealed class JournalService(IJournalRepository journals, IBatchRepository
                 foreach (var st in r.Stages.Where(x => x.Type is not ("bottling" or "warehouse")))
                     rows.Add(new()
                     {
-                        ["date"] = st.Date, ["batch"] = r.BatchCode, ["op"] = st.StageKey, ["from"] = Fmt.Vessel(st.From, st.FromLabel), ["to"] = Fmt.Vessel(st.To, st.ToLabel), ["before_l"] = st.BeforeL,
+                        ["date"] = st.Date, ["batch"] = r.BatchCode, ["op"] = st.StageKey, ["from"] = st.From.WithCellarLabel(st.FromLabel), ["to"] = st.To.WithCellarLabel(st.ToLabel), ["before_l"] = st.BeforeL,
                         ["litres"] = st.AfterL, ["remainder_l"] = st.RemainderL, ["loss_l"] = st.LossL, ["loss_pct"] = st.LossPct, ["status"] = st.Status,
                         ["method"] = st.Method, ["note"] = st.Note, ["source"] = st.Source,
                     });
@@ -93,7 +94,7 @@ public sealed class JournalService(IJournalRepository journals, IBatchRepository
                     double? lit = isB ? st.AfterL : null;
                     rows.Add(new()
                     {
-                        ["date"] = st.Date, ["batch"] = r.BatchCode, ["op"] = st.Type, ["vessel"] = Fmt.Vessel(st.From, st.FromLabel), ["bottles"] = st.Bottles, ["bottle_ml"] = st.BottleMl,
+                        ["date"] = st.Date, ["batch"] = r.BatchCode, ["op"] = st.Type, ["vessel"] = st.From.WithCellarLabel(st.FromLabel), ["bottles"] = st.Bottles, ["bottle_ml"] = st.BottleMl,
                         ["litres"] = lit, ["remainder_l"] = st.RemainderL, ["loss_l"] = st.LossL,
                         ["check"] = isB ? $"{st.Bottles:N0} × {(st.BottleMl ?? 750) / 1000:0.00#} = {lit:N0} L ✓" : (st.Note ?? ""), ["source"] = st.Source,
                     });

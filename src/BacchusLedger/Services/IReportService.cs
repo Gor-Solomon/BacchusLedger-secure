@@ -1,3 +1,5 @@
+using BacchusLedger.Domain.Ledger;
+
 namespace BacchusLedger.Services;
 
 /// Ledger report (read-only): a batch from vineyard to bottle as a double-entry ledger.
@@ -10,5 +12,5 @@ public interface IReportService
     Task<object?> BuildAsync(string? batchCode, string? vessel);
 
     /// The double-entry ledger of one batch (null when the batch does not exist).
-    Task<LedgerReport.Ledger?> LedgerAsync(long batchId);
+    Task<Ledger?> LedgerAsync(long batchId);
 }

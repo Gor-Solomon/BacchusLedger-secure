@@ -5,6 +5,7 @@ using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
 using BacchusLedger.Domain.Losses;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services;
 
@@ -31,7 +32,7 @@ public sealed class DemoService(
         var defs = Defs(sc);
         var done = await demo.DoneStepsAsync(sc);
         return new DemoStepsDto(sc, BatchCode(sc), defs.Length,
-            defs.Select((d, i) => new DemoStepDto(i, d.Title, d.Date == null ? null : Fmt.Date(d.Date), d.Journals, done.Contains(i))).ToList());
+            defs.Select((d, i) => new DemoStepDto(i, d.Title, d.Date == null ? null : d.Date.ToDisplayDate(), d.Journals, done.Contains(i))).ToList());
     }
 
     public async Task<ServiceResult<DemoCardDto>> StepAsync(int n, string? script)
@@ -225,7 +226,7 @@ public sealed class DemoService(
         foreach (var id in await demo.TrackedAsync(script, "deliveries")) kg += await origins.GetDeliveryKgAsync(id) ?? 0;
         var filled = defs.Take(n + 1).SelectMany(d => d.Journals).Distinct().Count();
         var totals = new DemoTotalsDto(kg, an?.LitresNow ?? 0, an?.BottledL ?? 0, an?.TotalLossL ?? 0, an?.LossValueUsd ?? 0, filled, 8);
-        return new DemoCardDto(script, n, defs.Length, def.Title, def.Date == null ? null : Fmt.Date(def.Date), def.Journals,
+        return new DemoCardDto(script, n, defs.Length, def.Title, def.Date == null ? null : def.Date.ToDisplayDate(), def.Journals,
             received, did, extra, batchId == 0 ? null : batchId, BatchCode(script), totals);
     }
 
@@ -288,7 +289,7 @@ public sealed class DemoService(
                 did.Add(new($"Peak temperature {tmp[pk]:0.0} °C on day {pk + 1}", "Calculated", null));
                 did.Add(new($"Fermentation finished at {sug[^1]:0.0} g/L", "Dataset A3", "pass"));
                 did.Add(new("Journal 7 (Laboratory analysis) updated", "Kakheti PDO spec", null));
-                extra = new FermentationChartExtra("fermentation", Enumerable.Range(1, sug.Length).ToList(), Enumerable.Range(0, sug.Length).Select(i => Fmt.Date(SeedDataset.A3Date(i))).ToList(), sug, tmp, "Dataset A3");
+                extra = new FermentationChartExtra("fermentation", Enumerable.Range(1, sug.Length).ToList(), Enumerable.Range(0, sug.Length).Select(i => (SeedDataset.A3Date(i)).ToDisplayDate()).ToList(), sug, tmp, "Dataset A3");
                 break;
             }
             case 6:

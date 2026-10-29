@@ -1,5 +1,6 @@
 using BacchusLedger.Contracts.Report;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Ledger;
 
 namespace BacchusLedger.Services;
 
@@ -12,11 +13,11 @@ public sealed class ReportService(
             ? ServiceResult<object>.Ok(r) : ServiceResult<object>.NotFound("batch not found");
 
     /// The double-entry ledger of one batch (null when the batch does not exist).
-    public async Task<LedgerReport.Ledger?> LedgerAsync(long batchId)
+    public async Task<Ledger?> LedgerAsync(long batchId)
     {
         if (await batches.GetAsync(batchId) is not { } b) return null;
         var eng = await losses.AnalyzeAsync(batchId, compare: false);
-        return LedgerReport.Build(b.GrapesKg, await origins.ListLedgerOriginsAsync(batchId), eng);
+        return new DoubleEntryBooking().Book(b.GrapesKg, await origins.ListLedgerOriginsAsync(batchId), eng);
     }
 
     /// ReportResponse, VesselReportResponse (no batch given) or null (batch not found).
@@ -26,7 +27,7 @@ public sealed class ReportService(
         string? vesselName = null;
         if (vessel != null && vessel.Split('/') is [var w, var code] && await vessels.GetAsync(w, code) is { } vr)
         {
-            vesselName = LedgerReport.VesselName(vr.Code, vr.CellarLabel);
+            vesselName = DoubleEntryBooking.VesselName(vr.Code, vr.CellarLabel);
             simulated = new SimulatedSectionDto(vesselName, "SIMULATED", "Simulated live data (live_events). Not part of the ledger, the balance or any journal.",
                 await liveEvents.ListVesselNotificationsAsync(vr.Id), await liveEvents.CountVesselReadingsAsync(vr.Id));
         }

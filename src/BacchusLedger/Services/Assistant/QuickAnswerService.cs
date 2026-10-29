@@ -5,6 +5,7 @@ using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using Microsoft.Extensions.Logging;
 using static BacchusLedger.Services.Assistant.AssistantTexts;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services.Assistant;
 
@@ -107,7 +108,7 @@ public sealed class QuickAnswerService(
         if (latest.Count == 0) return new() { Text = NoData(lang) };
         string Name(string t) => t switch { "temperature" => L(lang, "Temperature", "ტემპერატურა"), "ph" => "pH", _ => L(lang, "TA", "ტიტრული მჟავიანობა") };
         var lines = latest.Select(r => $"• {Name(r.Type)}: {F(r.Value)}{(r.Unit is { } u && u != "pH" ? " " + u : "")} " +
-                                       $"({Fmt.Date(r.TakenAt)}, {Fmt.Vessel(r.Vessel, r.CellarLabel)})");
+                                       $"({r.TakenAt.ToDisplayDate()}, {r.Vessel.WithCellarLabel(r.CellarLabel)})");
         var text = L(lang, "W03-B3-2025 — latest readings:", "W03-B3-2025 — ბოლო გაზომვები:") + "\n" + string.Join("\n", lines);
         return new()
         {
@@ -121,7 +122,7 @@ public sealed class QuickAnswerService(
         var rows = await liveEvents.ListOpenAlertsAsync(5);
         if (rows.Count == 0)
             return new() { Text = L(lang, "No alerts.", "შეტყობინებები არ არის."), Sources = ["SIMULATED"], Link = "#/live", LinkLabel = L(lang, "Live board", "Live დაფა"), Used = ["live alerts"] };
-        var lines = rows.Select(r => $"• {r.Level?.ToUpperInvariant()} · {r.VesselName ?? r.VesselCode}: {r.Message} ({Fmt.DateTime(r.SimTime ?? "")})");
+        var lines = rows.Select(r => $"• {r.Level?.ToUpperInvariant()} · {r.VesselName ?? r.VesselCode}: {r.Message} ({(r.SimTime ?? "").ToDisplayDateTime()})");
         var text = L(lang, $"{rows.Count} open live alert{(rows.Count == 1 ? "" : "s")} (SIMULATED data):", $"{rows.Count} ღია შეტყობინება (SIMULATED მონაცემები):") + "\n" + string.Join("\n", lines);
         return new()
         {

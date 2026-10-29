@@ -2,6 +2,7 @@ using BacchusLedger.Dataset;
 using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Losses;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services;
 
@@ -67,7 +68,7 @@ public sealed class LossAnalysisService(
             {
                 Key = "qvevri_rule", Label = "Qvevri rule (information)", Status = "info", Source = "Challenge Book",
                 Detail = "Challenge Book: by law 'qvevri wine' must be fermented and matured in the qvevri up to 31 December of the year of pressing. " +
-                         (sep != null ? $"This batch was separated on {Fmt.Date(sep.Date)} — please verify the label category." : "No separation recorded yet — please verify the label category."),
+                         (sep != null ? $"This batch was separated on {sep.Date.ToDisplayDate()} — please verify the label category." : "No separation recorded yet — please verify the label category."),
             });
         }
         return res;

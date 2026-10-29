@@ -1,6 +1,7 @@
 using BacchusLedger.Contracts.Batches;
 using BacchusLedger.Contracts.Origins;
 using BacchusLedger.Models;
+using BacchusLedger.Domain.Ledger;
 
 namespace BacchusLedger.Repositories;
 
@@ -32,7 +33,7 @@ public interface IOriginRepository
     Task DeleteBatchOriginsAsync(long batchId);
     Task<List<BatchOriginDto>> ListBatchOriginsAsync(long batchId);
     Task<List<OriginCheckRow>> ListOriginChecksAsync(long batchId);
-    Task<List<LedgerOrigin>> ListLedgerOriginsAsync(long batchId);
+    Task<List<HarvestDelivery>> ListLedgerOriginsAsync(long batchId);
     Task<List<FarmerOrigin>> ListFarmerOriginsAsync(long batchId);
     Task<List<OriginLink>> ListOriginLinksAsync(string batchCode);
 }

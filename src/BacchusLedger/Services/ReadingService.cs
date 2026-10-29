@@ -5,6 +5,7 @@ using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Readings;
+using BacchusLedger.Domain.Common;
 
 namespace BacchusLedger.Services;
 
@@ -78,7 +79,7 @@ public sealed class ReadingService(
         {
             // First fermentation reading of this vessel/batch: any non-Brix reading, or a lab row (e.g. the Dataset A3 fermentation log)
             if (await readings.FirstFermentationAsync(r.BatchId, r.VesselId, r.TakenAt) is { } first)
-                w.Add($"Fermentation has already started in this vessel (first reading {Fmt.DateTime(first)}). Refractometers are not accurate once alcohol is present — use the hydrometer. Initial Brix should be taken before fermentation.");
+                w.Add($"Fermentation has already started in this vessel (first reading {first.ToDisplayDateTime()}). Refractometers are not accurate once alcohol is present — use the hydrometer. Initial Brix should be taken before fermentation.");
             if (await readings.HasInitialBrixAsync(r.BatchId, r.VesselId))
                 w.Add("Initial Brix is recorded once per vessel/batch. This entry is saved as a correction — the latest Initial Brix is used for the calculations.");
         }

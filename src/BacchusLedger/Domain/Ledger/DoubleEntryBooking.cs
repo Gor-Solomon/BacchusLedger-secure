@@ -1,34 +1,18 @@
-using BacchusLedger.Models;
+using BacchusLedger.Domain.Common;
 using BacchusLedger.Domain.Losses;
 
-namespace BacchusLedger;
+namespace BacchusLedger.Domain.Ledger;
 
-/// Ledger report: one batch from vineyard to bottle as a double-entry ledger. Read-only (SELECTs only).
-/// Litres and losses come from LossEngine.Analyze; this class only books them as debit/credit pairs.
-/// Simulated live events are listed separately and never enter the ledger.
-public static class LedgerReport
+/// One batch from vineyard to bottle as a double-entry ledger: debit = the place that receives, credit = the place that gives.
+/// Litres and losses come from the loss calculator; this class only books them as debit/credit pairs.
+public sealed class DoubleEntryBooking
 {
     public const string Reception = "Winery reception (grapes)", Losses = "Losses", Unexplained = "Unexplained difference",
         Bottled = "Bottled wine", Warehouse = "Finished goods warehouse";
 
-    /// One movement: debit = the place that receives, credit = the place that gives. Same amount on both lines,
-    /// except a transformation (pressing: kg of grapes → litres of must), which carries its own credit amount and unit.
-    public sealed record Entry(int No, string Date, string Kind, string Text, string Debit, string Credit, double Amount, string Unit,
-        double? CreditAmount = null, string? CreditUnit = null, string? Ratio = null, string? Source = null, long? OpId = null, string? Ref = null);
-
-    public sealed record Account(string Name, string Unit, double Debit, double Credit)
-    {
-        public double Balance => Math.Round(Debit - Credit, 2);
-    }
-
-    public sealed record Balance(double? GrapesKg, double HarvestedKg, double PressedKg, double GrapesLeftKg, double? KgGap,
-        double InL, double BottledL, double InVesselsL, double LossesL, double GapL, bool HasLitres, bool EngineMatches, bool Balanced);
-
-    public sealed record Ledger(List<Entry> Entries, List<Account> Accounts, Balance Balance, LossResult Engine);
-
     static double R(double v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
 
-    public static string VesselName(string? code, string? label) => code == null ? "Vessel not recorded" : Fmt.Vessel(code, label);
+    public static string VesselName(string? code, string? label) => code == null ? "Vessel not recorded" : code.WithCellarLabel(label);
     static string Grapes(string? code, string? label) => $"{VesselName(code, label)} · grapes";
 
     /// Typical cause per stage (the record has the litres, not the cause).
@@ -42,9 +26,9 @@ public static class LedgerReport
     };
 
     /// Books a batch: harvest deliveries (kg), pressing (kg → L) and every replayed stage (L) as debit/credit pairs.
-    public static Ledger Build(double? grapesKg, IReadOnlyList<LedgerOrigin> origins, LossResult eng)
+    public Ledger Book(double? grapesKg, IReadOnlyList<HarvestDelivery> origins, LossResult eng)
     {
-        var entries = new List<Entry>();
+        var entries = new List<LedgerEntry>();
         var acc = new Dictionary<(string, string), (double dr, double cr)>();
         void Book(string date, string kind, string text, string debit, string credit, double amount, string unit,
             double? crAmount = null, string? crUnit = null, string? ratio = null, string? source = null, long? op = null, string? reference = null)
@@ -114,7 +98,7 @@ public static class LedgerReport
             }
         }
 
-        var accounts = acc.Select(a => new Account(a.Key.Item1, a.Key.Item2, R(a.Value.dr), R(a.Value.cr))).ToList();
+        var accounts = acc.Select(a => new LedgerAccount(a.Key.Item1, a.Key.Item2, R(a.Value.dr), R(a.Value.cr))).ToList();
         double inL = entries.Where(e => e.Kind == "transformation").Sum(e => e.Amount);
         double bottled = R(Bal(Bottled, "L") + Bal(Warehouse, "L"));
         var special = new[] { Bottled, Warehouse, Losses, Unexplained };
@@ -129,7 +113,7 @@ public static class LedgerReport
         bool engineOk = Math.Abs(losses + gap - eng.TotalLossL) < 0.01
             && Math.Abs(inVessels - eng.LitresNow) < 0.01;
         bool hasL = inL > 0;
-        var bal = new Balance(grapesKg, R(harvested), R(pressed), left, kgGap, R(inL), bottled, inVessels, losses, gap, hasL, engineOk,
+        var bal = new LedgerBalance(grapesKg, R(harvested), R(pressed), left, kgGap, R(inL), bottled, inVessels, losses, gap, hasL, engineOk,
             Math.Abs(gap) < 0.005 && (kgGap == null || Math.Abs(kgGap.Value) < 0.005) && engineOk);
         return new(entries, accounts, bal, eng);
     }

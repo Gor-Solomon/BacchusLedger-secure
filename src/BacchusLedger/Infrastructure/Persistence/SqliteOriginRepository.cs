@@ -2,6 +2,7 @@ using BacchusLedger.Contracts.Batches;
 using BacchusLedger.Contracts.Origins;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Ledger;
 
 namespace BacchusLedger.Infrastructure.Persistence;
 
@@ -122,14 +123,14 @@ public sealed class SqliteOriginRepository(ISqliteConnectionFactory connections)
             """, r => new OriginCheckRow(r.Dbl("kg"), r.Str("plot"), r.Str("municipality")), batchId);
     }
 
-    public async Task<List<LedgerOrigin>> ListLedgerOriginsAsync(long batchId)
+    public async Task<List<HarvestDelivery>> ListLedgerOriginsAsync(long batchId)
     {
         await using var db = await connections.OpenAsync();
         return await db.QueryAsync("""
             SELECT d.id, d.date, bo.kg, d.source, p.code AS plot, p.municipality, f.name AS farmer FROM batch_origins bo
             JOIN deliveries d ON d.id=bo.delivery_id JOIN plots p ON p.id=d.plot_id LEFT JOIN farmers f ON f.id=d.farmer_id
             WHERE bo.batch_id=$1 ORDER BY d.date, d.id
-            """, r => new LedgerOrigin(r.Long("id"), r.Str("date")!, r.Dbl("kg"), r.Str("source"), r.Str("plot"), r.Str("municipality"), r.Str("farmer")), batchId);
+            """, r => new HarvestDelivery(r.Long("id"), r.Str("date")!, r.Dbl("kg"), r.Str("source"), r.Str("plot"), r.Str("municipality"), r.Str("farmer")), batchId);
     }
 
     public async Task<List<FarmerOrigin>> ListFarmerOriginsAsync(long batchId)
