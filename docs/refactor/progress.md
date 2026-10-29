@@ -6,7 +6,7 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 |------|------|--------|
 | 1 | Safety net: solution file, check script, API baseline, remove IDE files | done |
 | 2 | Program + Startup + controllers + services (one project) | done |
-| 3 | Repositories + remove static infrastructure | in progress |
+| 3 | Repositories + remove static infrastructure | done |
 | 4 | Domain classes (pure logic) | todo |
 | 5 | Split into Domain, Application, Infrastructure and Api projects | todo |
 | 6 | Tests, CI, docs, merge | todo |
@@ -37,3 +37,23 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
   the responses (timestamps, hashes and signatures masked). It passed after every feature.
 - Tiny behaviour differences on malformed input only (documented in REVIEW.md): `POST /api/sensors/reading` without `vessel`/`dip_cm`
   now returns 400 instead of a 500 crash; `POST /api/operations/preview` with `batch_id` sent as a string now works instead of a 500.
+
+## Step 3 notes
+
+- Done as one coordinated change (commit "Step 3: repositories, …"): the static classes called each other
+  (`LossEngine.Analyze` was used by journals, demo, live, assistant, report and selftest), so converting one data area
+  at a time would have needed a temporary static service locator. Build, `check.ps1` and the write-request replay all passed.
+- `ISqliteConnectionFactory` / `SqliteConnectionFactory` (DB path from `StorageOptions`, env `DB_PATH`); `IUnitOfWork` /
+  `SqliteUnitOfWork` gives one transaction per write (serialised like the old `Db.Write` lock) and rolled-back probes for the selftest.
+  Repositories use the running transaction automatically (an `AsyncLocal` session), otherwise their own pooled connection.
+- Repositories (interfaces in `Repositories/`, SQLite classes in `Infrastructure/Persistence/`): Winery, Batch, Vessel, Operation,
+  Origin (farmers, plots, orders, deliveries, batch origins), Lab, Reading, Settings, LiveEvent, Demo, Maintenance (append-only
+  exception for the demo reset), Seal, Journal, Diagnostics (selftest counts and append-only probes). SQL text was copied unchanged.
+- `Seed` → `DatabaseSeeder` + `DatasetWriter` (shared with the demo players); schema → `DatabaseInitializer` (same `RESET_ON_START`).
+  Append-only triggers are unchanged.
+- Providers: `ISigningKeyProvider` (PEM file, still generates a DEMO key when missing), `IRangeConfigSource` (config/ranges.json),
+  `IFactsSource` (knowledge/facts.md). AI: `IAiProvider` with `OpenAiProvider` / `GeminiProvider` on `IHttpClientFactory`.
+- Options: `StorageOptions`, `AssistantOptions`, `LiveOptions`, bound in Startup from the same environment variables.
+- `Console.WriteLine` replaced by `ILogger<T>`. `HttpClient` request logging is set to Warning in appsettings.json.
+- Database errors reach services as `RepositoryException` (same message text as before), so services do not depend on SQLite.
+- Left for step 4 (pure static classes): `LossEngine`, `Calibration`, `Readings`, `Ranges`, `LedgerReport`, `Money`, `Fmt`, `AnswerGuard`.
