@@ -2,7 +2,9 @@ using System.Text;
 using System.Text.Json;
 using BacchusLedger.Application.Contracts.Common;
 using BacchusLedger.Application.Contracts.Live;
+using BacchusLedger.Application.Events;
 using BacchusLedger.Application.Extensions;
+using BacchusLedger.Application.Messaging;
 using BacchusLedger.Application.Models;
 using BacchusLedger.Application.Options;
 using BacchusLedger.Application.Repositories;
@@ -12,7 +14,8 @@ using BacchusLedger.Domain.Vessels;
 namespace BacchusLedger.Application.Services;
 
 public sealed class LiveBoardService(
-    ILiveControl live, ILiveHub hub, ILiveEventRepository events, IVesselRepository vessels, IUnitOfWork unitOfWork, IOptions<LiveOptions> options) : ILiveBoardService
+    ILiveControl live, ILiveHub hub, ILiveEventRepository events, IVesselRepository vessels, IUnitOfWork unitOfWork, IOutbox outbox, IOptions<LiveOptions> options)
+    : ILiveBoardService
 {
     public LiveStateDto State() => live.State();
 
@@ -83,6 +86,7 @@ public sealed class LiveBoardService(
     }
 
     /// A real sensor feeds the same stream as the simulator; its events are tagged SENSOR, not SIMULATED.
+    /// The reading and its SensorReadingReceived event are saved in one transaction: both or neither.
     public async Task<ServiceResult<SensorReadingResponse>> SensorReadingAsync(JsonElement body)
     {
         var code = body.RawStr("vessel");
@@ -101,6 +105,7 @@ public sealed class LiveBoardService(
                 CreatedAt = DateTime.UtcNow.ToString("o"), SimTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm"),
             };
             ev.Id = await events.InsertAsync(ev);
+            await outbox.EnqueueAsync(SensorReadingReceived.For(ev, DateTime.UtcNow));
             return ServiceResult<SensorReadingResponse>.Ok(new SensorReadingResponse(code, dip, l, "Calculated"));
         });
         if (ev != null) hub.Publish("sensor", ev);
