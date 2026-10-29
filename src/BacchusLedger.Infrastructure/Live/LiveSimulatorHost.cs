@@ -1,4 +1,5 @@
 using BacchusLedger.Application.Contracts.Live;
+using BacchusLedger.Application.Events;
 using BacchusLedger.Application.Models;
 using BacchusLedger.Application.Options;
 using BacchusLedger.Application.Providers;
@@ -23,6 +24,8 @@ public sealed class LiveSimulatorHost(
     public LiveStateDto State() => sim.State();
 
     public void UseSettings(IReadOnlyDictionary<string, string> settings) => sim.UseSettings(settings);
+
+    public IReadOnlyList<LiveEvent> ApplyRules(LiveReadingSimulated readings) => sim.ApplyRules(readings);
 
     public async Task TurnOnAsync()
     {

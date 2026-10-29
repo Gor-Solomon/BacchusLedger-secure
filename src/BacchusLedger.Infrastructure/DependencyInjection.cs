@@ -4,6 +4,7 @@ using BacchusLedger.Application.Services;
 using BacchusLedger.Application.Services.Assistant;
 using BacchusLedger.Infrastructure.Ai;
 using BacchusLedger.Infrastructure.Live;
+using BacchusLedger.Infrastructure.Outbox;
 using BacchusLedger.Infrastructure.Persistence;
 using BacchusLedger.Infrastructure.Providers;
 using BacchusLedger.Application.Messaging;
@@ -15,17 +16,22 @@ using Microsoft.Extensions.Options;
 
 namespace BacchusLedger.Infrastructure;
 
-/// SQLite persistence, file and HTTP providers, AI providers and the background live simulator.
+/// SQLite persistence, file and HTTP providers, AI providers, the background live simulator and the outbox worker.
 public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services) => services
         .AddPersistence()
         .AddProviders()
         .AddAiProviders()
-        .AddLiveSimulator();
+        .AddLiveSimulator()
+        .AddOutboxWorker();
 
     public static IServiceCollection AddPersistence(this IServiceCollection services) => services
-        .AddDbContext<BacchusLedgerDbContext>((sp, o) => o.UseSqlite(ConnectionString(sp.GetRequiredService<IOptions<StorageOptions>>().Value.DbPath)))
+        .AddSingleton<OutboxSignal>()
+        .AddSingleton<OutboxCommitInterceptor>()
+        .AddDbContext<BacchusLedgerDbContext>((sp, o) => o
+            .UseSqlite(ConnectionString(sp.GetRequiredService<IOptions<StorageOptions>>().Value.DbPath))
+            .AddInterceptors(sp.GetRequiredService<OutboxCommitInterceptor>()))
         .AddSingleton<SqliteWriteGate>()
         .AddScoped<IUnitOfWork, EfUnitOfWork>()
         .AddScoped<IWineryRepository, EfWineryRepository>()
@@ -43,6 +49,7 @@ public static class DependencyInjection
         .AddScoped<IJournalRepository, EfJournalRepository>()
         .AddScoped<IDiagnosticsRepository, EfDiagnosticsRepository>()
         .AddScoped<IOutbox, EfOutbox>()
+        .AddScoped<IOutboxRepository, EfOutboxRepository>()
         .AddScoped<DatabaseSeeder>()
         .AddScoped<IDatabaseInitializer, DatabaseInitializer>();
 
@@ -78,4 +85,8 @@ public static class DependencyInjection
         services.AddHostedService(sp => sp.GetRequiredService<LiveSimulatorHost>());
         return services;
     }
+
+    /// One background worker publishes the outbox messages (IMessagePublisher; in process today).
+    public static IServiceCollection AddOutboxWorker(this IServiceCollection services) =>
+        services.AddHostedService<OutboxProcessor>();
 }

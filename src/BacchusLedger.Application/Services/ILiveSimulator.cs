@@ -1,4 +1,5 @@
 using BacchusLedger.Application.Contracts.Live;
+using BacchusLedger.Application.Events;
 using BacchusLedger.Application.Models;
 
 namespace BacchusLedger.Application.Services;
@@ -13,7 +14,14 @@ public interface ILiveSimulator
 
     Task SetScenarioAsync(string scenario);
 
-    /// One simulator step; its events are written to live_events (in the running transaction, if any).
+    /// One simulator step without the rules: the readings (and notifications waiting from a scenario change) are written to
+    /// live_events (in the running transaction, if any). The rules run later on each vessel's LiveReadingSimulated (ApplyRules).
+    Task<SimulatedTick> ProduceAsync();
+
+    /// The live alert rules on one vessel's readings (in memory). Returns the new notifications, not yet stored.
+    IReadOnlyList<LiveEvent> ApplyRules(LiveReadingSimulated readings);
+
+    /// ProduceAsync and ApplyRules at once, notifications stored too (the selftest's simulator, inside its rolled-back probe).
     Task<List<LiveEvent>> TickAsync();
 
     /// Settings changed (thresholds are editable): used from the next tick.

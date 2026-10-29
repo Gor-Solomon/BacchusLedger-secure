@@ -91,7 +91,6 @@ public sealed class LiveBoardService(
     {
         var code = body.RawStr("vessel");
         if (code == null || body.Num("dip_cm") is not { } dip) return ServiceResult<SensorReadingResponse>.BadRequest("vessel and dip_cm are required");
-        LiveEvent? ev = null;
         var res = await unitOfWork.WriteAsync(async () =>
         {
             if (await vessels.FindAsync(code, null) is not { } v) return ServiceResult<SensorReadingResponse>.NotFound("vessel not found");
@@ -99,7 +98,7 @@ public sealed class LiveBoardService(
             if (m == null) return ServiceResult<SensorReadingResponse>.BadRequest("Volume unknown — enter litres manually");
             var l = Math.Round(m.LitresAtDip(dip), 1);
             await events.InsertSensorReadingAsync(v.Id, dip, l, DateTime.UtcNow.ToString("o"));
-            ev = new LiveEvent
+            var ev = new LiveEvent
             {
                 Kind = "reading", VesselId = v.Id, VesselCode = v.Code, VesselName = v.CellarLabel ?? v.Code, Metric = "level", Value = l, Unit = "L", Source = "SENSOR",
                 CreatedAt = DateTime.UtcNow.ToString("o"), SimTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm"),
@@ -108,7 +107,6 @@ public sealed class LiveBoardService(
             await outbox.EnqueueAsync(SensorReadingReceived.For(ev, DateTime.UtcNow));
             return ServiceResult<SensorReadingResponse>.Ok(new SensorReadingResponse(code, dip, l, "Calculated"));
         });
-        if (ev != null) hub.Publish("sensor", ev);
-        return res;
+        return res; // LiveStreamHandler pushes the reading to the live stream (outbox)
     }
 }

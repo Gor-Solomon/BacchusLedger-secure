@@ -1,4 +1,6 @@
 using BacchusLedger.Application.Contracts.Live;
+using BacchusLedger.Application.Events;
+using BacchusLedger.Application.Models;
 
 namespace BacchusLedger.Application.Services;
 
@@ -11,4 +13,7 @@ public interface ILiveControl
     Task SetScenarioAsync(string scenario);
     Task TickAsync();
     void UseSettings(IReadOnlyDictionary<string, string> settings);
+
+    /// The live alert rules on one vessel's readings of the running simulator (RangeRulesHandler). Returns the new notifications.
+    IReadOnlyList<LiveEvent> ApplyRules(LiveReadingSimulated readings);
 }

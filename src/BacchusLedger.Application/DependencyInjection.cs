@@ -1,9 +1,11 @@
 using BacchusLedger.Application.Events;
+using BacchusLedger.Application.Handlers;
 using BacchusLedger.Application.Messaging;
 using BacchusLedger.Application.Services;
 using BacchusLedger.Application.Services.Assistant;
 using BacchusLedger.Application.Services.SelfTest;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BacchusLedger.Application;
 
@@ -60,8 +62,29 @@ public static class DependencyInjection
         services.AddScoped<ILiveBoardService, LiveBoardService>();
 
     /// The event types stored in the outbox. The outbox itself (IOutbox) and its worker come from the infrastructure.
-    public static IServiceCollection AddOutboxFeature(this IServiceCollection services) => services
-        .AddSingleton(new OutboxEventTypes().Add<SensorReadingReceived>().Add<LiveReadingSimulated>().Add<RangeAlertRaised>());
+    /// Handlers of one event run in the order they are registered here: the rules before the live stream.
+    public static IServiceCollection AddOutboxFeature(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        return services
+            .AddSingleton(new OutboxEventTypes().Add<SensorReadingReceived>().Add<LiveReadingSimulated>().Add<RangeAlertRaised>())
+            .AddSingleton<RetryPolicy>()
+            .AddSingleton<IOutboxFaultInjector, OutboxFaultInjector>()
+            .AddScoped<IEventDispatcher, EventDispatcher>()
+            .AddScoped<IMessagePublisher, InProcessMessagePublisher>()
+            .AddScoped<IOutboxBatchProcessor, OutboxBatchProcessor>()
+            .AddScoped<RangeRulesHandler>()
+            .AddEventHandler<LiveReadingSimulated, RangeRulesHandler>()
+            .AddScoped<LiveStreamHandler>()
+            .AddEventHandler<SensorReadingReceived, LiveStreamHandler>()
+            .AddEventHandler<LiveReadingSimulated, LiveStreamHandler>()
+            .AddEventHandler<RangeAlertRaised, LiveStreamHandler>();
+    }
+
+    /// Registers THandler (already registered itself) as a handler of TEvent.
+    public static IServiceCollection AddEventHandler<TEvent, THandler>(this IServiceCollection services)
+        where TEvent : IOutboxEvent where THandler : class, IEventHandler<TEvent> =>
+        services.AddScoped<IEventHandler<TEvent>>(sp => sp.GetRequiredService<THandler>());
 
     /// The AI providers (IAiProvider) come from the infrastructure.
     public static IServiceCollection AddAssistantFeature(this IServiceCollection services) => services

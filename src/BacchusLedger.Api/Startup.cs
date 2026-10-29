@@ -47,6 +47,11 @@ public sealed class Startup(IConfiguration configuration)
             o.Enabled = !string.Equals(Env("ASSISTANT_ENABLED"), "false", StringComparison.OrdinalIgnoreCase);
         });
         services.Configure<LiveOptions>(configuration.GetSection("Live"));
+        services.Configure<OutboxOptions>(o =>
+        {
+            configuration.GetSection("Outbox").Bind(o);
+            if (Env("OUTBOX_FAIL_RATE") is { } rate && double.TryParse(rate, NumberStyles.Float, CultureInfo.InvariantCulture, out var r)) o.FailRate = Math.Clamp(r, 0, 1);
+        });
 
         services.AddApplication();
         services.AddInfrastructure();
