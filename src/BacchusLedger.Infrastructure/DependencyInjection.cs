@@ -28,7 +28,7 @@ public static class DependencyInjection
         .AddSingleton<SqliteWriteGate>()
         .AddScoped<ISqliteConnectionFactory, SqliteConnectionFactory>()
         .AddScoped<IUnitOfWork, EfUnitOfWork>()
-        .AddScoped<IWineryRepository, SqliteWineryRepository>()
+        .AddScoped<IWineryRepository, EfWineryRepository>()
         .AddScoped<IBatchRepository, SqliteBatchRepository>()
         .AddScoped<IVesselRepository, SqliteVesselRepository>()
         .AddScoped<IOperationRepository, SqliteOperationRepository>()
