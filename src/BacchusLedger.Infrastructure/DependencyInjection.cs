@@ -26,7 +26,6 @@ public static class DependencyInjection
     public static IServiceCollection AddPersistence(this IServiceCollection services) => services
         .AddDbContext<BacchusLedgerDbContext>((sp, o) => o.UseSqlite(ConnectionString(sp.GetRequiredService<IOptions<StorageOptions>>().Value.DbPath)))
         .AddSingleton<SqliteWriteGate>()
-        .AddScoped<ISqliteConnectionFactory, SqliteConnectionFactory>()
         .AddScoped<IUnitOfWork, EfUnitOfWork>()
         .AddScoped<IWineryRepository, EfWineryRepository>()
         .AddScoped<IBatchRepository, EfBatchRepository>()
