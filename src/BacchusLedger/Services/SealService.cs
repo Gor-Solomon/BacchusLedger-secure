@@ -4,12 +4,11 @@ using BacchusLedger.Models;
 using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
 using Microsoft.Extensions.Logging;
-using QRCoder;
 
 namespace BacchusLedger.Services;
 
 public sealed class SealService(
-    ISealRepository seals, IBatchRepository batches, ISigningKeyProvider key, IUnitOfWork unitOfWork, ILogger<SealService> logger) : ISealService
+    ISealRepository seals, IBatchRepository batches, ISigningKeyProvider key, IQrCodeRenderer qrCodes, IUnitOfWork unitOfWork, ILogger<SealService> logger) : ISealService
 {
     /// Version 2 added deliveries to the chain (older seals are rebuilt once).
     const string Version = "2";
@@ -26,11 +25,9 @@ public sealed class SealService(
         if (id == null) return ServiceResult<SealResponse>.NotFound("batch not found");
         var s = (await seals.GetAsync(id.Value))!;
         var url = $"{baseUrl}/verify.html?batch={Uri.EscapeDataString(batch!)}";
-        using var qr = new QRCodeGenerator();
-        var png = new PngByteQRCode(qr.CreateQrCode(url, QRCodeGenerator.ECCLevel.M)).GetGraphic(6);
         var chain = (await seals.ChainAsync(id.Value)).Select(e => new SealEntryDto(e.Seq, e.Tbl, e.RowId, e.Hash, e.Prev)).ToList();
         return new SealResponse(batch!, s.FinalHash, s.Signature, s.SealedAt, s.Entries, s.KeyId, "SHA-256 hash chain · ECDSA P-256 (DEMO KEY)", url, chain,
-            "data:image/png;base64," + Convert.ToBase64String(png));
+            qrCodes.ToPngDataUrl(url));
     }
 
     public async Task<ServiceResult<VerifyResponse>> VerifyAsync(string? batch)

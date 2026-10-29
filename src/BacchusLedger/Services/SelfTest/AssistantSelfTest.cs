@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using BacchusLedger.Dataset;
 using BacchusLedger.Options;
+using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services.Assistant;
 using Microsoft.Extensions.Options;
@@ -12,8 +13,8 @@ namespace BacchusLedger.Services.SelfTest;
 
 /// Assistant: quick answers, no-key behaviour, tools, key leak check and read-only check. Never calls an AI provider.
 public sealed class AssistantSelfTest(
-    IQuickAnswerService quick, IAssistantService assistant, IAssistantTools tools, ILedgerApiClient api, IDiagnosticsRepository diagnostics,
-    IOptions<AssistantOptions> options, IHttpClientFactory httpClients) : ISelfTestSection
+    IQuickAnswerService quick, IAssistantService assistant, IAssistantTools tools, ILocalApiClient api, IDiagnosticsRepository diagnostics,
+    IOptions<AssistantOptions> options) : ISelfTestSection
 {
     public async Task RunAsync(SelfTestContext ctx)
     {
@@ -67,7 +68,7 @@ public sealed class AssistantSelfTest(
                 var bad = new List<string>();
                 foreach (var (name, args) in calls)
                 {
-                    var (json, _) = await tools.RunAsync(name, (JsonObject)JsonNode.Parse(args)!, path => api.GetAsync(baseUrl, path));
+                    var (json, _) = await tools.RunAsync(name, (JsonObject)JsonNode.Parse(args)!, path => api.GetJsonAsync(baseUrl, path));
                     bodies.Add(($"tool {name}", json));
                     if (JsonNode.Parse(json) is JsonObject o && o["error"] != null) bad.Add($"{name}: {o["error"]}");
                 }
@@ -91,21 +92,20 @@ public sealed class AssistantSelfTest(
         int responses = 0;
         if (ctx.BaseUrl != null)
         {
-            var http = httpClients.CreateClient("selftest");
             string[] paths = ["/health", "/api/overview", "/api/batches", "/api/vessels", "/api/settings", "/api/readings", "/api/journals/coverage", "/api/live/state",
                 "/api/live/events", "/api/assistant/status", "/api/assistant/status?lang=ka", "/api/assistant/quick/1", "/api/assistant/quick/2", "/api/assistant/quick/3",
                 "/api/assistant/quick/4", "/api/assistant/quick/5", "/api/assistant/quick/1?lang=ka"];
             foreach (var p in paths)
             {
-                try { bodies.Add((p, await http.GetStringAsync(ctx.BaseUrl + p))); }
+                try { bodies.Add((p, await api.GetStringAsync(ctx.BaseUrl, p))); }
                 catch (Exception e) { hits.Add($"{p} ({e.GetType().Name})"); }
             }
             try
             {
                 // empty question: answered without calling any AI provider
-                using var resp = await http.PostAsync(ctx.BaseUrl + "/api/assistant/ask", new StringContent("""{"question":""}""", Encoding.UTF8, "application/json"));
-                bodies.Add(("POST /api/assistant/ask", await resp.Content.ReadAsStringAsync()));
-                if ((int)resp.StatusCode != 200) hits.Add($"POST /api/assistant/ask HTTP {(int)resp.StatusCode}");
+                var (status, body) = await api.PostJsonAsync(ctx.BaseUrl, "/api/assistant/ask", """{"question":""}""");
+                bodies.Add(("POST /api/assistant/ask", body));
+                if (status != 200) hits.Add($"POST /api/assistant/ask HTTP {status}");
             }
             catch (Exception e) { hits.Add($"POST /api/assistant/ask ({e.GetType().Name})"); }
         }

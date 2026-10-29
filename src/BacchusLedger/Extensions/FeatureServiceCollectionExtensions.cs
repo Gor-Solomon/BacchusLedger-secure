@@ -39,9 +39,10 @@ public static class FeatureServiceCollectionExtensions
         services.AddSingleton<ISigningKeyProvider, PemSigningKeyProvider>();
         services.AddSingleton<IRangeConfigSource, FileRangeConfigSource>();
         services.AddSingleton<IFactsSource, FileFactsSource>();
+        services.AddSingleton<IQrCodeRenderer, QrCoderRenderer>();
+        services.AddSingleton<ILocalApiClient, LocalApiClient>();
         services.AddHttpClient("ai", c => c.Timeout = Timeout.InfiniteTimeSpan); // the per-question time limit is a CancellationToken
         services.AddHttpClient("local", c => c.Timeout = TimeSpan.FromSeconds(10));
-        services.AddHttpClient("selftest", c => c.Timeout = TimeSpan.FromSeconds(10));
         return services;
     }
 
@@ -87,7 +88,6 @@ public static class FeatureServiceCollectionExtensions
     public static IServiceCollection AddAssistantFeature(this IServiceCollection services) => services
         .AddSingleton<IAiProvider, OpenAiProvider>()
         .AddSingleton<IAiProvider, GeminiProvider>()
-        .AddSingleton<ILedgerApiClient, LedgerApiClient>()
         .AddSingleton<IAssistantTools, AssistantTools>()
         .AddSingleton<IQuickAnswerService, QuickAnswerService>()
         .AddSingleton<IAssistantService, AssistantService>();

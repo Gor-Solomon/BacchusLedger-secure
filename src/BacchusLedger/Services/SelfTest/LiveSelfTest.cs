@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BacchusLedger.Dataset;
 using BacchusLedger.Models;
+using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services.Assistant;
 using BacchusLedger.Domain.Money;
@@ -11,7 +12,7 @@ namespace BacchusLedger.Services.SelfTest;
 /// LIVE mode: simulated events stay in live_events and never change the record.
 public sealed class LiveSelfTest(
     IUnitOfWork unitOfWork, ILiveSimulatorFactory simulators, ILiveEventRepository liveEvents, IBatchRepository batches, IWineryRepository wineries,
-    IDiagnosticsRepository diagnostics, IJournalService journals, ILossAnalysisService losses, IHttpClientFactory httpClients) : ISelfTestSection
+    IDiagnosticsRepository diagnostics, IJournalService journals, ILossAnalysisService losses, ILocalApiClient api) : ISelfTestSection
 {
     /// Everything the record (journals, batch loss totals, ROI) shows: must be identical with Live ON and OFF.
     async Task<string> RecordSnapshotAsync()
@@ -74,9 +75,7 @@ public sealed class LiveSelfTest(
         {
             try
             {
-                var http = httpClients.CreateClient("selftest");
-                using var resp = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, ctx.BaseUrl + "/api/live/stream?once=true"), HttpCompletionOption.ResponseHeadersRead);
-                var ctype = resp.Content.Headers.ContentType?.MediaType ?? "none";
+                var ctype = await api.GetContentTypeAsync(ctx.BaseUrl, "/api/live/stream?once=true");
                 Add("live", sse, "text/event-stream", ctype, ctype == "text/event-stream");
             }
             catch (Exception e) { Add("live", sse, "text/event-stream", e.Message, false); }

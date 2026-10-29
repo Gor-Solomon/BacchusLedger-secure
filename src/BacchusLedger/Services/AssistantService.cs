@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using BacchusLedger.Contracts.Assistant;
 using BacchusLedger.Options;
+using BacchusLedger.Providers;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services.Assistant;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,7 @@ namespace BacchusLedger.Services;
 
 public sealed class AssistantService(
     IOptions<AssistantOptions> options, IQuickAnswerService quick, ISettingsRepository settings, IAssistantTools tools, IEnumerable<IAiProvider> providers,
-    ILedgerApiClient api, ILogger<AssistantService> logger) : IAssistantService
+    ILocalApiClient api, ILogger<AssistantService> logger) : IAssistantService
 {
     const int TimeoutSeconds = 15;
     static readonly Regex KeyLike = new(@"(?:sk-|AQ\.)[A-Za-z0-9_\-]{8,}");
@@ -34,7 +35,7 @@ public sealed class AssistantService(
     public async Task<AssistantAnswer> AskAsync(JsonElement body, string localBaseUrl)
     {
         var q = body.ValueKind == JsonValueKind.Object && body.TryGetProperty("question", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-        try { return await AskAsync(q, options.Value, path => api.GetAsync(localBaseUrl, path)); }
+        try { return await AskAsync(q, options.Value, path => api.GetJsonAsync(localBaseUrl, path)); }
         catch (Exception e)
         {
             logger.LogError("assistant: ask failed ({Error})", e.GetType().Name);
