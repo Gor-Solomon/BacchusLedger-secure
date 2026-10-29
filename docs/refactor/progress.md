@@ -11,6 +11,7 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Steps 1–6: branch `refactor/layers
 | 5 | Split into Domain, Application, Infrastructure and Api projects | done |
 | 6 | Tests, CI, docs, merge | done (the owner merged it into `main`) |
 | 7 | Persistence on EF Core (DbContext, migrations, LINQ repositories) | done |
+| 8 | Transactional outbox for sensor and live events (branch `feature/outbox`) | done |
 
 ## Step 1 notes
 
@@ -142,3 +143,22 @@ Proofs of compatibility:
 
 Final state: build 0 errors / 0 warnings; tests 98 / 98 (Domain 30, Infrastructure 8, Api 60); `check.ps1` 48 / 48 identical, selftest 81 / 81;
 Docker on http://localhost:8081.
+
+## Step 8 notes (transactional outbox)
+
+Branch `feature/outbox` from `main` (local commits only, nothing pushed, `main` untouched). Reviewer guide: [REVIEW-OUTBOX.md](REVIEW-OUTBOX.md).
+Decision record: [../adr/0003-transactional-outbox.md](../adr/0003-transactional-outbox.md).
+
+Order of commits (each one: build 0 warnings, `dotnet test`, `scripts/check.ps1` 48 / 48 and selftest 81 / 81):
+1. Events, `IOutbox` / `EfOutbox` (same transaction), migration `AddOutbox` (`outbox_messages`, `processed_messages`, index on status + next_attempt_at).
+2. Producer: `POST /api/sensors/reading` saves the reading and `SensorReadingReceived` together (the direct SSE push was kept until step 3).
+3. Worker + dispatcher + handlers: `OutboxProcessor`, `OutboxBatchProcessor`, `EventDispatcher`, `RetryPolicy`, `InProcessMessagePublisher`,
+   `RangeRulesHandler`, `LiveStreamHandler`; simulator rules split from the readings (`ProduceAsync` / `ApplyRules`).
+4. Simulator through the outbox (`LiveReadingSimulated` per vessel per step, `RangeAlertRaised` for notifications).
+5. Visibility: `/api/outbox/stats`, `/api/outbox/failed`, `/api/outbox/failed/{id}/retry`, Expert-only "Event pipeline" card, `OUTBOX_FAIL_RATE`.
+6. Tests: 6 unit tests (Infrastructure) and 5 integration tests (Api).
+7. Docs: ADR 0003, README "Event pipeline", REVIEW-OUTBOX.md, this file.
+
+Nothing had to be undone. Final checks: build 0 errors / 0 warnings; tests 109 / 109 (Domain 30, Infrastructure 14, Api 65);
+`check.ps1` 48 / 48 identical, selftest 81 / 81; Docker on http://localhost:8081 with the existing volume (data and 7 / 7 seals identical,
+migration applied); browser: Live alerts as before, `OUTBOX_FAIL_RATE=0.5` shows retries and failed messages, set back to 0.

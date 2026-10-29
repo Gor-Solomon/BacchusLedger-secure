@@ -10,7 +10,7 @@ One app, four projects. Dependencies point inwards only:
 flowchart LR
     Api["BacchusLedger.Api<br/>Program, Startup, controllers, wwwroot"]
     App["BacchusLedger.Application<br/>services, contracts, repository and provider interfaces"]
-    Infra["BacchusLedger.Infrastructure<br/>EF Core (SQLite) DbContext, migrations, repositories, seeder, AI providers, live simulator"]
+    Infra["BacchusLedger.Infrastructure<br/>EF Core (SQLite) DbContext, migrations, repositories, seeder, AI providers, live simulator, outbox worker"]
     Domain["BacchusLedger.Domain<br/>calibration, losses, fermentation, ranges, ledger, hash chain"]
     Api --> App
     Api --> Infra
@@ -41,6 +41,43 @@ dotnet ef migrations add <Name> -p src/BacchusLedger.Infrastructure -o Persisten
 ```
 
 The app applies it at the next start. Keep table and column names snake_case (`HasColumnName`), and put triggers in the migration with `migrationBuilder.Sql(...)`.
+
+### Event pipeline (transactional outbox)
+
+Sensor readings and live events go through a **transactional outbox**, inside the same app (no message broker):
+the reading and its event are saved in **one transaction**, and a background worker handles the event reliably.
+A reading is never lost, even if alert processing fails or the app restarts. See [docs/adr/0003-transactional-outbox.md](docs/adr/0003-transactional-outbox.md).
+
+```mermaid
+sequenceDiagram
+    participant S as Sensor / live simulator
+    participant A as API (LiveBoardService / LiveSimulatorHost)
+    participant D as SQLite (one transaction)
+    participant W as OutboxProcessor (worker)
+    participant H as Handlers
+    participant U as Browser (SSE)
+    S->>A: POST /api/sensors/reading (or a simulator step)
+    A->>D: BEGIN
+    A->>D: reading (sensor_readings / live_events)
+    A->>D: event (outbox_messages, status pending)
+    A->>D: COMMIT (both or neither)
+    A-->>S: 200 (as fast as before)
+    D-->>W: commit wakes the worker (else poll every 1 s)
+    W->>D: pending messages, oldest first, order per vessel
+    W->>H: IMessagePublisher → IEventDispatcher → IEventHandler<T>
+    H->>D: RangeRulesHandler: notification (live_events) + RangeAlertRaised
+    H->>U: LiveStreamHandler: SSE "sensor" / "tick"
+    H->>D: processed_messages (never twice)
+    W->>D: processed, or attempts+1 and retry in 1, 2, 4, 8 s, failed after 5
+```
+
+- Events: `SensorReadingReceived`, `LiveReadingSimulated`, `RangeAlertRaised` (Application/Events). Tables: `outbox_messages`, `processed_messages` (migration `AddOutbox`).
+- Settings (section `Outbox`): `PollSeconds` 1, `BatchSize` 50, `MaxAttempts` 5, `RetryBaseSeconds` 1, `KeepProcessedHours` 24.
+- **Expert mode:** the Live board shows an **Event pipeline** card (pending / processed / failed, updated every 2 s). Hidden in Jury mode.
+  API: `GET /api/outbox/stats`, `GET /api/outbox/failed`, `POST /api/outbox/failed/{id}/retry`.
+- **Demo of retries:** `OUTBOX_FAIL_RATE=0.5 docker compose up -d` makes handlers fail at random (shows retries and failed messages);
+  `docker compose up -d` again sets it back to 0. Never on by default. At 0.5 the backlog grows while Live is on; it drains when the rate is 0 again.
+- Live/simulated data still never reaches journals, batch losses or ROI numbers; the outbox tables hold plumbing only.
 
 ### Why a modular monolith, not microservices
 
