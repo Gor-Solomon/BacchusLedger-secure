@@ -502,6 +502,73 @@ namespace BacchusLedger.Infrastructure.Persistence.Migrations
                     b.ToTable("orders", (string)null);
                 });
 
+            modelBuilder.Entity("BacchusLedger.Infrastructure.Persistence.Entities.OutboxMessageEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("processed_at");
+
+                    b.Property<long>("Seq")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("seq");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("type");
+
+                    b.Property<string>("Vessel")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vessel");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Seq")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("outbox_messages", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_outbox_messages_status", "status IN ('pending','processed','failed')");
+                        });
+                });
+
             modelBuilder.Entity("BacchusLedger.Infrastructure.Persistence.Entities.PlotEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -583,6 +650,25 @@ namespace BacchusLedger.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("plots", (string)null);
+                });
+
+            modelBuilder.Entity("BacchusLedger.Infrastructure.Persistence.Entities.ProcessedMessageEntity", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("Handler")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("handler");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("processed_at");
+
+                    b.HasKey("MessageId", "Handler");
+
+                    b.ToTable("processed_messages", (string)null);
                 });
 
             modelBuilder.Entity("BacchusLedger.Infrastructure.Persistence.Entities.ReadingEntity", b =>

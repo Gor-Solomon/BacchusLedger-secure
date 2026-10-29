@@ -20,12 +20,12 @@ public sealed class EfDiagnosticsRepository(BacchusLedgerDbContext db) : IDiagno
         _ => throw new ArgumentException($"unknown table {table}"),
     };
 
-    /// Row count and last rowid of every table except live_events, plus all settings.
+    /// Row count and last rowid of every table except live_events and the outbox tables (written by Live mode), plus all settings.
     public async Task<string> SnapshotAsync()
     {
         // Raw SQL on purpose: sqlite_master and rowid have no EF Core model (they cover every table, also ones the model does not know).
         var tables = await db.Database
-            .SqlQuery<string>($"SELECT name AS Value FROM sqlite_master WHERE type='table' AND name NOT IN ('live_events') AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            .SqlQuery<string>($"SELECT name AS Value FROM sqlite_master WHERE type='table' AND name NOT IN ('live_events','outbox_messages','processed_messages') AND name NOT LIKE 'sqlite_%' ORDER BY name")
             .ToListAsync();
         var parts = new List<string>();
         foreach (var t in tables)

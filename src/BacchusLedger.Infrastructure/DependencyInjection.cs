@@ -6,6 +6,7 @@ using BacchusLedger.Infrastructure.Ai;
 using BacchusLedger.Infrastructure.Live;
 using BacchusLedger.Infrastructure.Persistence;
 using BacchusLedger.Infrastructure.Providers;
+using BacchusLedger.Application.Messaging;
 using BacchusLedger.Application.Options;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +42,7 @@ public static class DependencyInjection
         .AddScoped<ISealRepository, EfSealRepository>()
         .AddScoped<IJournalRepository, EfJournalRepository>()
         .AddScoped<IDiagnosticsRepository, EfDiagnosticsRepository>()
+        .AddScoped<IOutbox, EfOutbox>()
         .AddScoped<DatabaseSeeder>()
         .AddScoped<IDatabaseInitializer, DatabaseInitializer>();
 

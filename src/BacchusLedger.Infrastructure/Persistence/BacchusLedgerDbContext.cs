@@ -28,6 +28,11 @@ public sealed class BacchusLedgerDbContext(DbContextOptions<BacchusLedgerDbConte
     public DbSet<SealMetaEntity> SealMeta => Set<SealMetaEntity>();
     public DbSet<SealTamperEntity> SealTamper => Set<SealTamperEntity>();
     public DbSet<SealBatchEntity> SealBatches => Set<SealBatchEntity>();
+    public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
+    public DbSet<ProcessedMessageEntity> ProcessedMessages => Set<ProcessedMessageEntity>();
+
+    /// Set by the outbox when it adds a message in the running transaction; the commit then wakes up the outbox worker.
+    internal bool HasNewOutboxMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(BacchusLedgerDbContext).Assembly);

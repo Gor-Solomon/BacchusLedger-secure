@@ -9,7 +9,7 @@ public class MigrationTests
 {
     static readonly string[] Tables =
     [
-        "batch_origins", "batches", "deliveries", "demo_progress", "demo_rows", "farmers", "lab", "live_events", "maintenance", "operations", "orders", "plots",
+        "batch_origins", "batches", "deliveries", "demo_progress", "demo_rows", "farmers", "lab", "live_events", "maintenance", "operations", "orders", "outbox_messages", "plots", "processed_messages",
         "readings", "seal_batch", "seal_chain", "seal_meta", "seal_tamper", "sensor_readings", "settings", "vessels", "wineries",
     ];
 
@@ -54,14 +54,17 @@ public class MigrationTests
 
         using var raw = t.OpenRaw();
         using var cmd = raw.CreateCommand();
-        cmd.CommandText = "SELECT (SELECT COUNT(*) FROM __EFMigrationsHistory), (SELECT MigrationId FROM __EFMigrationsHistory), (SELECT name FROM wineries WHERE code='W99'), (SELECT COUNT(*) FROM wineries)";
+        cmd.CommandText = "SELECT (SELECT COUNT(*) FROM __EFMigrationsHistory), (SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId LIMIT 1), " +
+            "(SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC LIMIT 1), (SELECT name FROM wineries WHERE code='W99'), (SELECT COUNT(*) FROM wineries)";
         using var r = cmd.ExecuteReader();
         r.Read();
-        Assert.Equal(1, r.GetInt64(0));
-        Assert.EndsWith("_InitialSchema", r.GetString(1));
-        Assert.Equal("Old winery", r.GetString(2)); // the old data is still there
-        Assert.Equal(1, r.GetInt64(3)); // and nothing was seeded on top of it
+        Assert.Equal(2, r.GetInt64(0));
+        Assert.EndsWith("_InitialSchema", r.GetString(1)); // recorded, not run
+        Assert.EndsWith("_AddOutbox", r.GetString(2));     // run on top of the old tables
+        Assert.Equal("Old winery", r.GetString(3)); // the old data is still there
+        Assert.Equal(1, r.GetInt64(4)); // and nothing was seeded on top of it
         Assert.Equal(Triggers, TestDatabase.Names(raw, "trigger"));
+        Assert.Contains("outbox_messages", TestDatabase.Names(raw, "table"));
     }
 
     [Fact]

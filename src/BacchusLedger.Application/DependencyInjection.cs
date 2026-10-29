@@ -1,3 +1,5 @@
+using BacchusLedger.Application.Events;
+using BacchusLedger.Application.Messaging;
 using BacchusLedger.Application.Services;
 using BacchusLedger.Application.Services.Assistant;
 using BacchusLedger.Application.Services.SelfTest;
@@ -18,6 +20,7 @@ public static class DependencyInjection
         .AddReportFeature()
         .AddSealFeature()
         .AddLiveFeature()
+        .AddOutboxFeature()
         .AddAssistantFeature()
         .AddDemoFeature()
         .AddSettingsFeature()
@@ -55,6 +58,10 @@ public static class DependencyInjection
     /// The simulator itself (ILiveControl, ILiveSimulatorFactory, ILiveHub) comes from the infrastructure.
     public static IServiceCollection AddLiveFeature(this IServiceCollection services) =>
         services.AddScoped<ILiveBoardService, LiveBoardService>();
+
+    /// The event types stored in the outbox. The outbox itself (IOutbox) and its worker come from the infrastructure.
+    public static IServiceCollection AddOutboxFeature(this IServiceCollection services) => services
+        .AddSingleton(new OutboxEventTypes().Add<SensorReadingReceived>().Add<LiveReadingSimulated>().Add<RangeAlertRaised>());
 
     /// The AI providers (IAiProvider) come from the infrastructure.
     public static IServiceCollection AddAssistantFeature(this IServiceCollection services) => services
