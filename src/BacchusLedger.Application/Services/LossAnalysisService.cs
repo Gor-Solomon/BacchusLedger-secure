@@ -1,5 +1,6 @@
 using BacchusLedger.Domain.Dataset;
 using BacchusLedger.Application.Extensions;
+using BacchusLedger.Application.Models;
 using BacchusLedger.Application.Repositories;
 using BacchusLedger.Domain.Losses;
 using BacchusLedger.Domain.Common;
@@ -17,8 +18,7 @@ public sealed class LossAnalysisService(
         var b = await batches.GetAsync(batchId) ?? throw new InvalidOperationException($"batch {batchId} not found");
         var ops = await operations.ListForBatchAsync(batchId);
         if (extra != null) ops.Add(extra);
-        var res = new LossCalculator(norms, settings.Number("value_per_litre_usd")).Replay(ops);
-        res.BatchId = batchId; res.BatchCode = b.Code; res.Winery = b.WineryCode;
+        var res = Replay(b, ops, settings, norms);
 
         // Same stage at the other winery (W01 vs W03): pure dataset fact
         var refCode = res.Winery switch { "W01" => SeedDataset.W03Batch, "W03" => SeedDataset.W01Batch, _ => null };
@@ -32,8 +32,39 @@ public sealed class LossAnalysisService(
                     s.Other = new StageComparison(other.Winery, other.BatchCode, m.LossL, m.LossPct, m.Status, m.Source);
             }
         }
+        AddChecks(res, b, await origins.ListOriginChecksAsync(batchId));
+        return res;
+    }
 
-        var rows = await origins.ListOriginChecksAsync(batchId);
+    /// Batches, operations and origins are each loaded with one query (no query per batch). No W01/W03 comparison.
+    public async Task<Dictionary<long, LossResult>> AnalyzeManyAsync(IReadOnlyCollection<long> batchIds, IReadOnlyDictionary<string, string>? settings = null)
+    {
+        settings ??= await settingsRepository.GetAsync();
+        var norms = settings.Norms();
+        var wanted = batchIds.ToHashSet();
+        var records = (await batches.ListAsync()).Where(b => wanted.Contains(b.Id)).ToList();
+        var ops = await operations.ListForBatchesAsync(wanted);
+        var origin = await origins.ListOriginChecksAsync(wanted);
+        var results = new Dictionary<long, LossResult>();
+        foreach (var b in records)
+        {
+            var res = Replay(b, ops.GetValueOrDefault(b.Id) ?? [], settings, norms);
+            AddChecks(res, b, origin.GetValueOrDefault(b.Id) ?? []);
+            results[b.Id] = res;
+        }
+        return results;
+    }
+
+    static LossResult Replay(BatchRecord b, List<CellarOperation> ops, IReadOnlyDictionary<string, string> settings, StageNorms norms)
+    {
+        var res = new LossCalculator(norms, settings.Number("value_per_litre_usd")).Replay(ops);
+        res.BatchId = b.Id; res.BatchCode = b.Code; res.Winery = b.WineryCode;
+        return res;
+    }
+
+    /// Origin completeness, PDO zone and (for qvevri batches) the qvevri rule.
+    static void AddChecks(LossResult res, BatchRecord b, List<OriginCheckRow> rows)
+    {
         if (rows.Count == 0)
         {
             res.Checks.Add(new LossCheck { Key = "pdo", Label = "Plot municipality is inside the Kakheti PDO zone", Status = "na", Detail = "No plots recorded for this batch", Source = "Kakheti PDO spec" });
@@ -71,6 +102,5 @@ public sealed class LossAnalysisService(
                          (sep != null ? $"This batch was separated on {sep.Date.ToDisplayDate()} — please verify the label category." : "No separation recorded yet — please verify the label category."),
             });
         }
-        return res;
     }
 }

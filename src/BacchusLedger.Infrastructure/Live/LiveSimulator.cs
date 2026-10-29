@@ -84,8 +84,10 @@ public sealed class LiveSimulator(LiveSimulatorDependencies? deps, RangeConfig r
         StartedUtc = DateTime.UtcNow;
         step = 0; Scenario = "allgood";
         var contents = new Dictionary<long, double>();
-        foreach (var b in await batches.ListRealIdsAsync())
-            foreach (var (code, l) in (await losses.AnalyzeAsync(b, settings, compare: false)).VesselLitres)
+        var real = await batches.ListRealIdsAsync();
+        var results = await losses.AnalyzeManyAsync(real, settings);
+        foreach (var b in real)
+            foreach (var (code, l) in results[b].VesselLitres)
                 foreach (var v in await vessels.ListIdsAsync(b, code))
                     contents[v] = contents.GetValueOrDefault(v) + l;
         foreach (var (w, code, ferm, streaming) in Active)

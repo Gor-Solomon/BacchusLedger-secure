@@ -103,9 +103,11 @@ public sealed class VesselService(
     {
         var s = await settings.GetAsync();
         var d = new Dictionary<string, List<VesselContentDto>>();
-        foreach (var b in await batches.ListRefsAsync())
+        var refs = await batches.ListRefsAsync();
+        var results = await losses.AnalyzeManyAsync(refs.Select(b => b.Id).ToList(), s);
+        foreach (var b in refs)
         {
-            var r = await losses.AnalyzeAsync(b.Id, s, compare: false);
+            var r = results[b.Id];
             foreach (var (v, l) in r.VesselLitres)
             {
                 var key = $"{b.WineryCode}/{v}";

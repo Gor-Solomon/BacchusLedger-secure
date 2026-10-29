@@ -33,6 +33,9 @@ public interface IOriginRepository
     Task DeleteBatchOriginsAsync(long batchId);
     Task<List<BatchOriginDto>> ListBatchOriginsAsync(long batchId);
     Task<List<OriginCheckRow>> ListOriginChecksAsync(long batchId);
+
+    /// Origin rows of many batches in one query (per batch in batch_origins order).
+    Task<Dictionary<long, List<OriginCheckRow>>> ListOriginChecksAsync(IReadOnlyCollection<long> batchIds);
     Task<List<HarvestDelivery>> ListLedgerOriginsAsync(long batchId);
     Task<List<FarmerOrigin>> ListFarmerOriginsAsync(long batchId);
     Task<List<OriginLink>> ListOriginLinksAsync(string batchCode);

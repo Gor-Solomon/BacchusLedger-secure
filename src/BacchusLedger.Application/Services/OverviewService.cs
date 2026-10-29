@@ -13,9 +13,11 @@ public sealed class OverviewService(IBatchRepository batches, IWineryRepository 
         var s = await settings.GetAsync();
         double inCellar = 0, loss = 0, value = 0; int real = 0;
         var flags = new List<object>();
-        foreach (var b in await batches.ListAsync())
+        var all = await batches.ListAsync();
+        var results = await losses.AnalyzeManyAsync(all.Select(b => b.Id).ToList(), s);
+        foreach (var b in all)
         {
-            var r = await losses.AnalyzeAsync(b.Id, s, compare: false);
+            var r = results[b.Id];
             if (!b.IsCopy) { real++; inCellar += r.LitresNow; loss += r.TotalLossL; value += r.LossValueUsd; }
             foreach (var st in r.Stages.Where(x => x.Status is "above" or "negative"))
                 flags.Add(new StageFlag(b.Code, b.Id, b.IsCopy, st.Status, st.Date, st.StageKey, st.LossL, st.LossPct, st.NormPct, st.ExcessL,

@@ -76,9 +76,11 @@ public sealed class JournalService(IJournalRepository journals, IBatchRepository
     {
         var s = await settings.GetAsync();
         var rows = new List<Dictionary<string, object?>>();
-        foreach (var id in await batches.ListIdsAsync(batch, winery))
+        var ids = await batches.ListIdsAsync(batch, winery);
+        var results = await losses.AnalyzeManyAsync(ids, s);
+        foreach (var id in ids)
         {
-            var r = await losses.AnalyzeAsync(id, s, compare: false);
+            var r = results[id];
             if (n == 5)
                 foreach (var st in r.Stages.Where(x => x.Type is not ("bottling" or "warehouse")))
                     rows.Add(new()

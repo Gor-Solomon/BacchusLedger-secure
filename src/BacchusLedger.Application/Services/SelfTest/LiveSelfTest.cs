@@ -20,9 +20,11 @@ public sealed class LiveSelfTest(
         var s = SettingDefaults.Copy();
         var parts = new List<object>();
         for (int n = 1; n <= 8; n++) parts.Add((await journals.BuildAsync(n, null, null)).Rows);
-        foreach (var id in await batches.ListIdsAsync())
+        var ids = await batches.ListIdsAsync();
+        var results = await losses.AnalyzeManyAsync(ids, s);
+        foreach (var id in ids)
         {
-            var r = await losses.AnalyzeAsync(id, s, compare: false);
+            var r = results[id];
             parts.Add(new[] { r.BatchCode, $"{r.TotalLossL}", $"{r.LossValueUsd}", $"{r.BottledL}", $"{r.LitresNow}", $"{r.TotalDifferenceL}" });
         }
         parts.Add(new OnePercentLoss(2.99, 631).ToRows(await wineries.ListBySizeAsync()));

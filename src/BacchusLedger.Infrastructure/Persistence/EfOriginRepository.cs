@@ -109,6 +109,15 @@ public sealed class EfOriginRepository(BacchusLedgerDbContext db) : IOriginRepos
          where bo.BatchId == batchId
          select new OriginCheckRow(bo.Kg, p.Code, p.Municipality)).ToListAsync();
 
+    public async Task<Dictionary<long, List<OriginCheckRow>>> ListOriginChecksAsync(IReadOnlyCollection<long> batchIds) =>
+        (await (from bo in db.BatchOrigins.AsNoTracking()
+                join d in db.Deliveries on bo.DeliveryId equals d.Id
+                join p in db.Plots on d.PlotId equals p.Id
+                where batchIds.Contains(bo.BatchId ?? 0)
+                orderby bo.Rowid
+                select new { BatchId = bo.BatchId ?? 0, bo.Kg, p.Code, p.Municipality }).ToListAsync())
+        .GroupBy(x => x.BatchId).ToDictionary(g => g.Key, g => g.Select(x => new OriginCheckRow(x.Kg, x.Code, x.Municipality)).ToList());
+
     public Task<List<HarvestDelivery>> ListLedgerOriginsAsync(long batchId) =>
         (from bo in db.BatchOrigins.AsNoTracking()
          join d in db.Deliveries on bo.DeliveryId equals d.Id

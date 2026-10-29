@@ -37,10 +37,11 @@ public sealed class QuickAnswerService(
     public async Task<List<AboveNormalFlag>> AboveNormalAsync(IReadOnlyDictionary<string, string> s)
     {
         var list = new List<AboveNormalFlag>();
-        foreach (var b in await batches.ListAsync())
+        var real = (await batches.ListAsync()).Where(b => !b.IsCopy).ToList();
+        var results = await losses.AnalyzeManyAsync(real.Select(b => b.Id).ToList(), s);
+        foreach (var b in real)
         {
-            if (b.IsCopy) continue;
-            var r = await losses.AnalyzeAsync(b.Id, s, compare: false);
+            var r = results[b.Id];
             list.AddRange(r.Stages.Where(x => x.Status == "above")
                 .Select(x => new AboveNormalFlag(b.Id, b.Code, x.StageKey, x.Date, x.LossL, x.LossPct, x.NormPct, x.ExcessL, x.Source)));
         }

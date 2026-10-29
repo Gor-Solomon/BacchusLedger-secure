@@ -16,7 +16,8 @@ public sealed class CellarService(IBatchRepository batches, IVesselRepository ve
         var day = date is { Length: 10 } ? date : DateTime.Now.ToString("yyyy-MM-dd");
         var real = await batches.ListRealAsync();
         var ops = new Dictionary<long, List<CellarOperation>>();
-        foreach (var b in real) ops[b.Id] = await operations.ListForBatchAsync(b.Id);
+        var loaded = await operations.ListForBatchesAsync(real.Select(b => b.Id).ToList());
+        foreach (var b in real) ops[b.Id] = loaded.GetValueOrDefault(b.Id) ?? [];
         var litres = new Dictionary<string, List<CellarContentDto>>();
         var attention = new Dictionary<string, string>();
         var grapes = new Dictionary<string, CellarGrapesDto>();

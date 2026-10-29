@@ -9,18 +9,25 @@ namespace BacchusLedger.Infrastructure.Persistence;
 public sealed class EfOperationRepository(BacchusLedgerDbContext db) : IOperationRepository
 {
     public Task<List<CellarOperation>> ListForBatchAsync(long batchId) =>
-        (from o in db.Operations.AsNoTracking()
-         where o.BatchId == batchId
-         from vf in db.Vessels.Where(v => v.Id == o.FromVesselId).DefaultIfEmpty()
+        WithVessels(db.Operations.AsNoTracking().Where(o => o.BatchId == batchId)).Select(x => x.Op).ToListAsync();
+
+    public async Task<Dictionary<long, List<CellarOperation>>> ListForBatchesAsync(IReadOnlyCollection<long> batchIds) =>
+        (await WithVessels(db.Operations.AsNoTracking().Where(o => batchIds.Contains(o.BatchId ?? 0))).ToListAsync())
+        .GroupBy(x => x.BatchId).ToDictionary(g => g.Key, g => g.Select(x => x.Op).ToList());
+
+    /// Operations with the codes and cellar labels of their vessels, in date order.
+    IQueryable<OperationWithBatch> WithVessels(IQueryable<OperationEntity> operations) =>
+        from o in operations
+        from vf in db.Vessels.Where(v => v.Id == o.FromVesselId).DefaultIfEmpty()
          from vt in db.Vessels.Where(v => v.Id == o.ToVesselId).DefaultIfEmpty()
          orderby o.Date, o.Id
-         select new CellarOperation
+         select new OperationWithBatch { BatchId = o.BatchId ?? 0, Op = new CellarOperation
          {
              Id = o.Id, Date = o.Date!, Type = o.Type!, FromId = o.FromVesselId, ToId = o.ToVesselId,
              FromCode = vf.Code, ToCode = vt.Code, FromLabel = vf.CellarLabel, ToLabel = vt.CellarLabel,
              Litres = o.Litres, Bottles = (int?)o.Bottles, Ml = o.BottleMl, Remainder = o.RemainderL, Dip = o.DipCm,
              Method = o.Method, Note = o.Note, Source = o.Source, Person = o.Person,
-         }).ToListAsync();
+         } };
 
     public async Task<long> InsertAsync(NewOperation o) => (await db.InsertAsync(new OperationEntity
     {
@@ -34,4 +41,10 @@ public sealed class EfOperationRepository(BacchusLedgerDbContext db) : IOperatio
         db.Operations.AnyAsync(o => (o.FromVesselId == vesselId || o.ToVesselId == vesselId) && string.Compare(o.CreatedAt, sinceIso) >= 0);
 
     public Task DeleteForBatchAsync(long batchId) => db.Operations.Where(o => o.BatchId == batchId).ExecuteDeleteAsync().GuardAsync();
+
+    sealed class OperationWithBatch
+    {
+        public long BatchId { get; init; }
+        public CellarOperation Op { get; init; } = null!;
+    }
 }
