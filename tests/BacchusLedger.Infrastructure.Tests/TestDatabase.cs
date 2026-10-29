@@ -10,7 +10,8 @@ public sealed class TestDatabase : IDisposable
 {
     readonly string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bacchus-infra-tests-" + Guid.NewGuid().ToString("N"));
 
-    public TestDatabase()
+    /// configure: extra or replaced services (registered last, so they win).
+    public TestDatabase(Action<IServiceCollection>? configure = null)
     {
         Directory.CreateDirectory(dir);
         var services = new ServiceCollection();
@@ -18,6 +19,7 @@ public sealed class TestDatabase : IDisposable
         services.Configure<StorageOptions>(o => { o.DbPath = Path; o.SigningKeyPath = System.IO.Path.Combine(dir, "key.pem"); });
         services.AddApplication();
         services.AddInfrastructure();
+        configure?.Invoke(services);
         Services = services.BuildServiceProvider();
     }
 
