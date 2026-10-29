@@ -4,6 +4,6 @@ data/
 *.md
 .git
 .env
-!src/BacchusLedger/knowledge/*.md
+!src/BacchusLedger.Api/knowledge/*.md
 keys/
 seed-data/

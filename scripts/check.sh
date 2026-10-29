@@ -4,10 +4,10 @@
 #
 #   scripts/check.sh --baseline   # record the baseline
 #   scripts/check.sh              # compare; exit code 1 on any difference
-# Options: --project <dir> (default src/BacchusLedger), --port <n> (default 5199), --no-build
+# Options: --project <dir> (default src/BacchusLedger.Api), --port <n> (default 5199), --no-build
 set -euo pipefail
 
-BASELINE=0; PROJECT="src/BacchusLedger"; PORT=5199; BUILD=1
+BASELINE=0; PROJECT="src/BacchusLedger.Api"; PORT=5199; BUILD=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --baseline|-Baseline) BASELINE=1 ;;

@@ -9,7 +9,7 @@
 #>
 param(
     [switch]$Baseline,
-    [string]$Project = "src/BacchusLedger",
+    [string]$Project = "src/BacchusLedger.Api",
     [int]$Port = 5199,
     [switch]$NoBuild
 )

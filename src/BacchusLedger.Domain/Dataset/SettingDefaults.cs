@@ -1,0 +1,27 @@
+namespace BacchusLedger.Domain.Dataset;
+
+/// Default settings (DEMO ASSUMPTIONS); stored values override them.
+public static class SettingDefaults
+{
+    public static readonly IReadOnlyDictionary<string, string> Values = new Dictionary<string, string>
+    {
+        ["value_per_litre_usd"] = "2.99",
+        ["litres_per_tonne"] = "631",
+        ["norm_racking_first"] = "3.0",
+        ["norm_racking"] = "1.5",
+        ["norm_filtration"] = "0.6",
+        ["norm_bottling"] = "0.3",
+        ["norm_stock_check"] = "0.3",
+        ["norm_transfer"] = "1.0",
+        ["language"] = "en",
+        // LIVE rule thresholds (temperature limits are in config/ranges.json)
+        ["live_level_drop_l"] = "20",
+        ["live_level_window_h"] = "1",
+        ["live_stuck_delta_sg"] = "0.001",
+        ["live_stuck_hours"] = "48",
+        ["live_stuck_min_sg"] = "1.010",
+    };
+
+    /// A fresh, editable copy of the defaults.
+    public static Dictionary<string, string> Copy() => new(Values);
+}

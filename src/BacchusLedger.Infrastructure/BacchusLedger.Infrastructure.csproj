@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BacchusLedger.Application\BacchusLedger.Application.csproj" />
+    <ProjectReference Include="..\BacchusLedger.Domain\BacchusLedger.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BackgroundService (live simulator) and IHttpClientFactory -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+  </ItemGroup>
+
+</Project>
