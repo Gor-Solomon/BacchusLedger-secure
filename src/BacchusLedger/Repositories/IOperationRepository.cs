@@ -1,9 +1,11 @@
+using BacchusLedger.Domain.Losses;
+
 namespace BacchusLedger.Repositories;
 
 public interface IOperationRepository
 {
     /// The batch's operations in date order, with vessel codes and cellar labels.
-    Task<List<LossEngine.Op>> ListForBatchAsync(long batchId);
+    Task<List<CellarOperation>> ListForBatchAsync(long batchId);
 
     Task<long> InsertAsync(Models.NewOperation operation);
     Task<string?> FirstDateAsync(long batchId);

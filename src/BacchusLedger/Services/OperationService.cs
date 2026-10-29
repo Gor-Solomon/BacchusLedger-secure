@@ -6,6 +6,7 @@ using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services.Mapping;
 using BacchusLedger.Domain.Vessels;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger.Services;
 
@@ -40,7 +41,7 @@ public sealed class OperationService(
         return new OperationSavedResponse(id, stage?.ToDto());
     }
 
-    async Task<(LossEngine.Op? op, string? error, DipInfoDto? info, long batchId)> BuildAsync(JsonElement body)
+    async Task<(CellarOperation? op, string? error, DipInfoDto? info, long batchId)> BuildAsync(JsonElement body)
     {
         string? Str(string k) => body.NonEmptyStr(k);
         double? Num(string k) => body.Num(k);
@@ -101,7 +102,7 @@ public sealed class OperationService(
         var note = Str("note");
         if (type == "intake" && Num("kg") is { } kg) note = $"{kg:N0} kg grapes" + (note != null ? " · " + note : "");
 
-        return (new LossEngine.Op
+        return (new CellarOperation
         {
             Id = long.MaxValue, Date = date, Type = type, FromId = from?.Id, ToId = to?.Id, FromCode = from?.Code, ToCode = to?.Code,
             Litres = litres, Bottles = bottles, Ml = type is "bottling" or "warehouse" ? ml : null, Remainder = rem, Dip = dip,

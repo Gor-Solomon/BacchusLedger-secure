@@ -1,18 +1,19 @@
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger.Infrastructure.Persistence;
 
 public sealed class SqliteOperationRepository(ISqliteConnectionFactory connections) : IOperationRepository
 {
-    public async Task<List<LossEngine.Op>> ListForBatchAsync(long batchId)
+    public async Task<List<CellarOperation>> ListForBatchAsync(long batchId)
     {
         await using var db = await connections.OpenAsync();
         return await db.QueryAsync("""
             SELECT o.*, vf.code AS from_code, vt.code AS to_code, vf.cellar_label AS from_label, vt.cellar_label AS to_label FROM operations o
             LEFT JOIN vessels vf ON vf.id=o.from_vessel_id LEFT JOIN vessels vt ON vt.id=o.to_vessel_id
             WHERE o.batch_id=$1 ORDER BY o.date, o.id
-            """, r => new LossEngine.Op
+            """, r => new CellarOperation
         {
             Id = r.Long("id"), Date = r.Str("date")!, Type = r.Str("type")!,
             FromId = r.LongOrNull("from_vessel_id"), ToId = r.LongOrNull("to_vessel_id"),

@@ -4,6 +4,7 @@ using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger.Services;
 
@@ -20,7 +21,7 @@ public sealed class DemoService(
     static string N0(double v) => v.ToString("N0");
     static string P2(double? v) => (v ?? 0).ToString("0.00");
     static string Usd(double v) => "$" + v.ToString("N2");
-    static string Status(LossEngine.Stage? s) => s?.Status switch { "ok" => "pass", "above" => "above", "negative" => "fail", _ => "info" };
+    static string Status(LossStage? s) => s?.Status switch { "ok" => "pass", "above" => "above", "negative" => "fail", _ => "info" };
     static string Script(string? s) => s == "w03" ? "w03" : "w01";
     static string BatchCode(string script) => script == "w03" ? W03Code : W01Code;
 
@@ -214,7 +215,7 @@ public sealed class DemoService(
         double vpl = s.Number("value_per_litre_usd"), lpt = s.Number("litres_per_tonne");
         long batchId = await DemoBatchAsync(script);
         var an = batchId != 0 ? await losses.AnalyzeAsync(batchId, s) : null;
-        LossEngine.Stage? St(string date, string type) => an?.Stages.FirstOrDefault(x => x.Date == date && x.Type == type);
+        LossStage? St(string date, string type) => an?.Stages.FirstOrDefault(x => x.Date == date && x.Type == type);
 
         var received = new List<DemoFieldDto>();
         var did = new List<DemoDidDto>();
@@ -228,7 +229,7 @@ public sealed class DemoService(
             received, did, extra, batchId == 0 ? null : batchId, BatchCode(script), totals);
     }
 
-    async Task<object?> BuildW01Async(int n, LossEngine.Result? an, Func<string, string, LossEngine.Stage?> St, double vpl, double lpt,
+    async Task<object?> BuildW01Async(int n, LossResult? an, Func<string, string, LossStage?> St, double vpl, double lpt,
         List<DemoFieldDto> rec, List<DemoDidDto> did)
     {
         object? extra = null;
@@ -347,7 +348,7 @@ public sealed class DemoService(
         return extra;
     }
 
-    static void StageCard(LossEngine.Stage? s, string received, List<DemoFieldDto> rec, List<DemoDidDto> did, double vpl)
+    static void StageCard(LossStage? s, string received, List<DemoFieldDto> rec, List<DemoDidDto> did, double vpl)
     {
         rec.Add(new(s?.StageKey == "stock_check" ? "Stock check" : s?.StageKey == "filtration" ? "Filtration" : "Racking", received, s?.Source ?? "Dataset"));
         if (s == null) return;
@@ -366,7 +367,7 @@ public sealed class DemoService(
         did.Add(new("Journal 5 (Storage and movement) updated", "Kakheti PDO spec", null));
     }
 
-    async Task<object?> BuildW03Async(int n, LossEngine.Result? an, Func<string, string, LossEngine.Stage?> St, double vpl,
+    async Task<object?> BuildW03Async(int n, LossResult? an, Func<string, string, LossStage?> St, double vpl,
         List<DemoFieldDto> rec, List<DemoDidDto> did)
     {
         object? extra = null;

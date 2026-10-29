@@ -1,91 +1,14 @@
-using BacchusLedger.Extensions;
+namespace BacchusLedger.Domain.Losses;
 
-namespace BacchusLedger;
-
-/// Section 6: mass balance. Replays a batch's operations in date order, tracking litres per vessel.
-public static class LossEngine
+/// Section 6: mass balance. Losses per stage against the normal loss, the bottle check and the "a vessel cannot give out more than it holds" check.
+public sealed class LossCalculator(StageNorms norms, double valuePerLitre)
 {
-    public sealed class Op
-    {
-        public long Id;
-        public string Date = "", Type = "";
-        public long? FromId, ToId;
-        public string? FromCode, ToCode, FromLabel, ToLabel, Method, Note, Source, Person;
-        public double? Litres, Ml, Remainder, Dip;
-        public int? Bottles;
-    }
-
-    public sealed class Stage
-    {
-        public long OpId { get; set; }
-        public string Date { get; set; } = "";
-        public string Type { get; set; } = "";
-        public string StageKey { get; set; } = "";
-        public string? From { get; set; }
-        public string? To { get; set; }
-        public string? FromLabel { get; set; }
-        public string? ToLabel { get; set; }
-        public double? BeforeL { get; set; }
-        public double? AfterL { get; set; }
-        public double? RemainderL { get; set; }
-        public double? LossL { get; set; }
-        public double? LossPct { get; set; }
-        public double? NormPct { get; set; }
-        public double? NormL { get; set; }
-        public double? ExcessL { get; set; }
-        public string Status { get; set; } = "n/a"; // ok | above | negative | n/a
-        public int? Bottles { get; set; }
-        public double? BottleMl { get; set; }
-        public string? Method { get; set; }
-        public double? DipCm { get; set; }
-        public string? Note { get; set; }
-        public string? Source { get; set; }
-        public string? Person { get; set; }
-        public StageComparison? Other { get; set; }
-    }
-
-    /// The same stage at the other winery (W01 vs W03).
-    public sealed record StageComparison(string Winery, string Batch, double? LossL, double? LossPct, string Status, string? Source);
-
-    public sealed class Check
-    {
-        public string Key { get; set; } = "";
-        public string Label { get; set; } = "";
-        public string Status { get; set; } = "pass"; // pass | fail | info | na
-        public string Detail { get; set; } = "";
-        public string Source { get; set; } = "Calculated";
-    }
-
-    public sealed class Result
-    {
-        public long BatchId { get; set; }
-        public string BatchCode { get; set; } = "";
-        public string Winery { get; set; } = "";
-        public List<Stage> Stages { get; set; } = [];
-        public List<Check> Checks { get; set; } = [];
-        public double? FirstLitres { get; set; }
-        public double BottledL { get; set; }
-        public int Bottles { get; set; }
-        public double RemainderL { get; set; }
-        public double TotalLossL { get; set; }
-        public double? TotalDifferenceL { get; set; }
-        public double LitresNow { get; set; }
-        public double LossValueUsd { get; set; }
-        public double ExcessL { get; set; }
-        public Dictionary<string, double> VesselLitres { get; set; } = [];
-    }
-
-    public static readonly string[] NormKeys = ["racking_first", "racking", "filtration", "bottling", "stock_check", "transfer"];
-
-    public static Dictionary<string, double> Norms(IReadOnlyDictionary<string, string> s) =>
-        NormKeys.ToDictionary(k => k, k => s.Number("norm_" + k));
-
     static double R(double v, int d = 2) => Math.Round(v, d, MidpointRounding.AwayFromZero);
 
-    /// Core replay over an op list (pure — used for preview, selftest and pages).
-    public static Result Replay(List<Op> ops, Dictionary<string, double> norms, double valuePerLitre)
+    /// Replays the operations in date order, tracking litres per vessel.
+    public LossResult Replay(List<CellarOperation> ops)
     {
-        var res = new Result();
+        var res = new LossResult();
         var vessels = new Dictionary<string, double>();
         double Get(string? v) => v != null && vessels.TryGetValue(v, out var l) ? l : 0;
         bool firstRackingSeen = false;
@@ -94,7 +17,7 @@ public static class LossEngine
 
         foreach (var o in ops.OrderBy(o => o.Date, StringComparer.Ordinal).ThenBy(o => o.Id))
         {
-            var st = new Stage
+            var st = new LossStage
             {
                 OpId = o.Id, Date = o.Date, Type = o.Type, StageKey = o.Type, From = o.FromCode, To = o.ToCode, FromLabel = o.FromLabel, ToLabel = o.ToLabel,
                 Bottles = o.Bottles, BottleMl = o.Ml, Method = o.Method, DipCm = o.Dip, Note = o.Note, Source = o.Source, Person = o.Person,
@@ -146,7 +69,7 @@ public static class LossEngine
             {
                 double before = st.BeforeL.Value;
                 st.LossPct = R(st.LossL.Value / before * 100);
-                if (norms.TryGetValue(st.StageKey, out var norm))
+                if (norms.TryGet(st.StageKey, out var norm))
                 {
                     st.NormPct = norm;
                     st.NormL = R(norm / 100 * before);
@@ -167,8 +90,8 @@ public static class LossEngine
         res.LossValueUsd = R(res.TotalLossL * valuePerLitre);
 
         foreach (var (ok, text) in bottleChecks)
-            res.Checks.Add(new Check { Key = "bottle", Label = "Bottle check: bottles × bottle size = litres bottled", Status = ok ? "pass" : "fail", Detail = text });
-        res.Checks.Add(new Check
+            res.Checks.Add(new LossCheck { Key = "bottle", Label = "Bottle check: bottles × bottle size = litres bottled", Status = ok ? "pass" : "fail", Detail = text });
+        res.Checks.Add(new LossCheck
         {
             Key = "give_out", Label = "A vessel cannot give out more than it holds",
             Status = ops.Any(o => o.Type is "racking" or "filtration" or "transfer" or "bottling") ? (giveOutFails.Count == 0 ? "pass" : "fail") : "na",

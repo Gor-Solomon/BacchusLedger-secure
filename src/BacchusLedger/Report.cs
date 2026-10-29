@@ -1,4 +1,5 @@
 using BacchusLedger.Models;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger;
 
@@ -23,7 +24,7 @@ public static class LedgerReport
     public sealed record Balance(double? GrapesKg, double HarvestedKg, double PressedKg, double GrapesLeftKg, double? KgGap,
         double InL, double BottledL, double InVesselsL, double LossesL, double GapL, bool HasLitres, bool EngineMatches, bool Balanced);
 
-    public sealed record Ledger(List<Entry> Entries, List<Account> Accounts, Balance Balance, LossEngine.Result Engine);
+    public sealed record Ledger(List<Entry> Entries, List<Account> Accounts, Balance Balance, LossResult Engine);
 
     static double R(double v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
 
@@ -31,7 +32,7 @@ public static class LedgerReport
     static string Grapes(string? code, string? label) => $"{VesselName(code, label)} · grapes";
 
     /// Typical cause per stage (the record has the litres, not the cause).
-    static string Cause(LossEngine.Stage s) => s.StageKey switch
+    static string Cause(LossStage s) => s.StageKey switch
     {
         "racking_first" or "racking" => "lees (racking)",
         "filtration" => "filtration",
@@ -41,7 +42,7 @@ public static class LedgerReport
     };
 
     /// Books a batch: harvest deliveries (kg), pressing (kg → L) and every replayed stage (L) as debit/credit pairs.
-    public static Ledger Build(double? grapesKg, IReadOnlyList<LedgerOrigin> origins, LossEngine.Result eng)
+    public static Ledger Build(double? grapesKg, IReadOnlyList<LedgerOrigin> origins, LossResult eng)
     {
         var entries = new List<Entry>();
         var acc = new Dictionary<(string, string), (double dr, double cr)>();

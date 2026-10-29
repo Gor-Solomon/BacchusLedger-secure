@@ -3,6 +3,7 @@ using BacchusLedger.Contracts.Cellar;
 using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger.Services;
 
@@ -14,7 +15,7 @@ public sealed class CellarService(IBatchRepository batches, IVesselRepository ve
         var s = await settings.GetAsync();
         var day = date is { Length: 10 } ? date : DateTime.Now.ToString("yyyy-MM-dd");
         var real = await batches.ListRealAsync();
-        var ops = new Dictionary<long, List<LossEngine.Op>>();
+        var ops = new Dictionary<long, List<CellarOperation>>();
         foreach (var b in real) ops[b.Id] = await operations.ListForBatchAsync(b.Id);
         var litres = new Dictionary<string, List<CellarContentDto>>();
         var attention = new Dictionary<string, string>();
@@ -25,7 +26,7 @@ public sealed class CellarService(IBatchRepository batches, IVesselRepository ve
         {
             var bo = ops[b.Id];
             foreach (var o in bo) opDates.Add(o.Date);
-            var r = LossEngine.Replay(bo.Where(o => string.CompareOrdinal(o.Date, day) <= 0).ToList(), LossEngine.Norms(s), s.Number("value_per_litre_usd"));
+            var r = new LossCalculator(s.Norms(), s.Number("value_per_litre_usd")).Replay(bo.Where(o => string.CompareOrdinal(o.Date, day) <= 0).ToList());
             foreach (var (v, l) in r.VesselLitres)
             {
                 var key = $"{b.WineryCode}/{v}";
@@ -40,7 +41,7 @@ public sealed class CellarService(IBatchRepository batches, IVesselRepository ve
                 grapes[$"{b.WineryCode}/{intake.ToCode}"] = new CellarGrapesDto(b.Code, b.Id, b.GrapesKg, intake.Date, intake.Source);
         }
         foreach (var d in opDates)
-            totals[d] = Math.Round(real.Sum(b => LossEngine.Replay(ops[b.Id].Where(o => string.CompareOrdinal(o.Date, d) <= 0).ToList(), LossEngine.Norms(s), 0).LitresNow), 1);
+            totals[d] = Math.Round(real.Sum(b => new LossCalculator(s.Norms(), 0).Replay(ops[b.Id].Where(o => string.CompareOrdinal(o.Date, d) <= 0).ToList()).LitresNow), 1);
         var list2 = (await vessels.ListForCellarAsync()).Select(v =>
         {
             var key = $"{v.WineryCode}/{v.Code}";

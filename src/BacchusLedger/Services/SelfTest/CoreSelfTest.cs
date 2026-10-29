@@ -1,6 +1,8 @@
 using BacchusLedger.Dataset;
+using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
+using BacchusLedger.Domain.Losses;
 
 namespace BacchusLedger.Services.SelfTest;
 
@@ -10,7 +12,7 @@ public sealed class CoreSelfTest(
     IBatchRepository batches, IReadingRepository readings, IVesselRepository vessels, IDiagnosticsRepository diagnostics, IUnitOfWork unitOfWork,
     ILossAnalysisService losses, IReadingService readingService) : ISelfTestSection
 {
-    static LossEngine.Op ToOp(SeedOperation o, long id) => new()
+    static CellarOperation ToOp(SeedOperation o, long id) => new()
     {
         Id = id, Date = o.Date, Type = o.Type, FromCode = o.From, ToCode = o.To, Litres = o.Litres, Bottles = o.Bottles, Ml = o.Ml, Remainder = o.Remainder,
     };
@@ -32,12 +34,12 @@ public sealed class CoreSelfTest(
         Add("calibration", "T3-x cylinder: dip 35.0 cm → ≈ 1,188 L", "≈ 1188", $"{t3.LitresAtDip(35.0):0.0}", Near(t3.LitresAtDip(35.0), 1188, 1));
 
         // Section 6: loss engine
-        var norms = LossEngine.Norms(SettingDefaults.Values);
+        var norms = SettingDefaults.Values.Norms();
         const double vpl = 2.99, lpt = 631;
-        var w01 = LossEngine.Replay(SeedDataset.W01Ops.Select((o, i) => ToOp(o, i + 1)).ToList(), norms, vpl);
-        var w03 = LossEngine.Replay(SeedDataset.W03Ops.Select((o, i) => ToOp(o, i + 1)).ToList(), norms, vpl);
+        var w01 = new LossCalculator(norms, vpl).Replay(SeedDataset.W01Ops.Select((o, i) => ToOp(o, i + 1)).ToList());
+        var w03 = new LossCalculator(norms, vpl).Replay(SeedDataset.W03Ops.Select((o, i) => ToOp(o, i + 1)).ToList());
 
-        void Stage(string g, LossEngine.Result r, string key, int occurrence, double lossL, double? pct, string status, double? excess = null)
+        void Stage(string g, LossResult r, string key, int occurrence, double lossL, double? pct, string status, double? excess = null)
         {
             var s = r.Stages.Where(x => x.StageKey == key).ElementAtOrDefault(occurrence);
             var exp = $"{lossL} L" + (pct != null ? $" ({pct:0.00}%)" : "") + $" {status}" + (excess != null ? $" excess {excess:0.0} L" : "");
