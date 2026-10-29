@@ -145,32 +145,6 @@ app.MapGet("/api/live/stream", async (HttpContext ctx, LiveHub hub, LiveService 
     finally { dispose(); }
 });
 
-// Which of the 8 journals have rows (for the coverage tiles)
-app.MapGet("/api/journals/coverage", (long? batch, string? winery) =>
-{
-    using var c = Db.Open();
-    return Results.Ok(Enumerable.Range(1, 8).Select(n =>
-    {
-        var j = Journals.Build(c, n, batch, winery);
-        return new { n, title = j.Title, rows = j.Rows.Count, filled = j.Rows.Count > 0, template = n == 8 };
-    }).ToList());
-});
-
-// ---------------- journals ----------------
-app.MapGet("/api/journals/{n:int}", (int n, long? batch, string? winery) =>
-{
-    if (n is < 1 or > 8) return Results.NotFound();
-    using var c = Db.Open();
-    return Results.Ok(Journals.Build(c, n, batch, winery));
-});
-app.MapGet("/api/journals/{n:int}.csv", (int n, long? batch, string? winery) =>
-{
-    if (n is < 1 or > 8) return Results.NotFound();
-    using var c = Db.Open();
-    var j = Journals.Build(c, n, batch, winery);
-    return Results.File(Journals.Csv(j), "text/csv; charset=utf-8", $"journal-{n}-{j.Title.ToLowerInvariant().Replace(' ', '-')}.csv");
-});
-
 // ---------------- demo player ----------------
 static string Script(string? s) => s == "w03" ? "w03" : "w01";
 app.MapGet("/api/demo/steps", (string? script) => Results.Ok(DemoScript.Steps(Script(script))));
