@@ -1,0 +1,57 @@
+# Endpoints compared by check.ps1 / check.sh: "<name> <path>", one per line.
+# Only GET endpoints that return JSON and do not depend on the clock, the signing key or the live simulator.
+# Left out on purpose:
+#   /health                     (contains the DB path)
+#   /api/report                 (generated_at = now)
+#   /api/verify                 (sealed_at = now, public key differs per key file)
+#   /api/live/state, /api/live/events, /api/live/stream (live simulator / SSE)
+#   /api/journals/{n}.csv       (CSV, not JSON)
+#   /api/cellar without ?date   (defaults to today)
+selftest              /api/selftest
+overview              /api/overview
+wineries              /api/wineries
+batches               /api/batches
+batch_1               /api/batches/1
+batch_2               /api/batches/2
+batch_3               /api/batches/3
+batch_4               /api/batches/4
+batch_5               /api/batches/5
+batch_missing         /api/batches/999
+farmers               /api/farmers
+plots                 /api/plots
+deliveries            /api/deliveries
+vessels               /api/vessels
+vessel_F-1            /api/vessels/F-1
+vessel_Q-3            /api/vessels/Q-3
+vessel_T3-1_W03       /api/vessels/T3-1?winery=W03
+vessel_missing        /api/vessels/NOPE
+litres_F-1_dip50      /api/vessels/F-1/litres?dip=50
+litres_Q-3_750l       /api/vessels/Q-3/litres?litres=750
+litres_F-1_none       /api/vessels/F-1/litres
+readings              /api/readings
+readings_batch_1      /api/readings?batch=1
+readings_F-1_W01      /api/readings?vessel=F-1&winery=W01
+cellar_2025-10-01     /api/cellar?date=2025-10-01
+cellar_2025-12-01     /api/cellar?date=2025-12-01
+journals_coverage     /api/journals/coverage
+journal_1             /api/journals/1
+journal_2             /api/journals/2
+journal_3             /api/journals/3
+journal_4             /api/journals/4
+journal_5             /api/journals/5
+journal_6             /api/journals/6
+journal_7             /api/journals/7
+journal_8             /api/journals/8
+journal_5_batch_1     /api/journals/5?batch=1
+journal_5_W03         /api/journals/5?winery=W03
+demo_steps_w01        /api/demo/steps
+demo_steps_w03        /api/demo/steps?script=w03
+settings              /api/settings
+assistant_status      /api/assistant/status
+assistant_status_ka   /api/assistant/status?lang=ka
+assistant_quick_1     /api/assistant/quick/1
+assistant_quick_2     /api/assistant/quick/2
+assistant_quick_3     /api/assistant/quick/3
+assistant_quick_4     /api/assistant/quick/4
+assistant_quick_5     /api/assistant/quick/5
+assistant_quick_ka_1  /api/assistant/quick/1?lang=ka

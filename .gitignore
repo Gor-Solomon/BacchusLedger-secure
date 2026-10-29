@@ -5,3 +5,7 @@ data/*.db-*
 .env
 keys/
 seed-data/
+.vs/
+*.user
+*.suo
+TestResults/

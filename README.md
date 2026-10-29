@@ -17,11 +17,11 @@ Then:
 docker compose up --build
 ```
 
-Open http://localhost:8080. After the image is built the app needs no network: no CDN, no external fonts and no API calls.
+Open http://localhost:8081. After the image is built the app needs no network: no CDN, no external fonts and no API calls.
 
 - Data is stored in `./data/bacchus.db` (mounted at `/data`). On first start an empty database is seeded with the data from the spec (section 4).
-- Self-test: http://localhost:8080/api/selftest returns pass/fail for every acceptance check: calibration, loss engine, and the Update 2 readings checks (formulas, dataset counts, nothing invented, the Initial Brix warning, append-only). The same results appear at the bottom of Settings.
-- Health: http://localhost:8080/health
+- Self-test: http://localhost:8081/api/selftest returns pass/fail for every acceptance check: calibration, loss engine, and the Update 2 readings checks (formulas, dataset counts, nothing invented, the Initial Brix warning, append-only). The same results appear at the bottom of Settings.
+- Health: http://localhost:8081/health
 
 ### Reset
 
