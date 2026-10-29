@@ -1,5 +1,6 @@
 using BacchusLedger.Application.Contracts.Live;
 using BacchusLedger.Application.Events;
+using BacchusLedger.Application.Messaging;
 using BacchusLedger.Application.Models;
 using BacchusLedger.Application.Options;
 using BacchusLedger.Application.Providers;
@@ -61,25 +62,28 @@ public sealed class LiveSimulatorHost(
         await TickAsync(); // react immediately
     }
 
+    /// The readings and their outbox events are saved in one transaction; the outbox worker then runs the rules
+    /// (RangeRulesHandler) and pushes the "tick" messages to the live stream (LiveStreamHandler).
     public async Task TickAsync()
     {
-        List<LiveEvent> evs;
         await gate.WaitAsync();
         try
         {
             if (!sim.On) return;
             await using var scope = Bind();
             var events = scope.ServiceProvider.GetRequiredService<ILiveEventRepository>();
-            evs = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().WriteAsync(async () =>
+            var outbox = scope.ServiceProvider.GetRequiredService<IOutbox>();
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().WriteAsync(async () =>
             {
-                var e = await sim.TickAsync();
+                var tick = await sim.ProduceAsync();
+                foreach (var note in tick.Notes) await outbox.EnqueueAsync(RangeAlertRaised.For(note, DateTime.UtcNow));
+                foreach (var readings in tick.Readings) await outbox.EnqueueAsync(readings);
                 // simulated readings are kept short; notifications stay for the feed
                 await events.TrimReadingsAsync(options.Value.KeepReadings);
-                return e;
+                return 0;
             });
         }
         finally { gate.Release(); }
-        hub.Publish("tick", new LiveTickMessage(sim.State(), evs.Where(e => e.Kind == "reading").ToList(), evs.Where(e => e.Kind == "notification").ToList()));
     }
 
     /// A new scope for one simulator step; the simulator uses its services until the scope is disposed.
