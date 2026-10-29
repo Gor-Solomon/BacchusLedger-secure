@@ -204,7 +204,7 @@ A round button with a small qvevri sits at the bottom right. Click it to open th
   5. *Any live alerts?* → the open live notifications (labelled **SIMULATED**), or "No alerts".
 - **Free questions — AI, when online and a key is set.** Type anything (max 500 characters, Enter to send).
   - The model uses **tool calling** over our own read-only API: `get_overview`, `list_batches`, `get_batch`, `get_readings`, `get_vessel`, `get_journal`, `get_live_alerts`, `search_facts`. It does not use its own knowledge.
-  - `search_facts` is a keyword search over `src/BacchusLedger/knowledge/facts.md`, the problem and market facts from the Overview and Data sources pages, one fact per line with its source.
+  - `search_facts` is a keyword search over `src/BacchusLedger.Api/knowledge/facts.md`, the problem and market facts from the Overview and Data sources pages, one fact per line with its source.
   - The rules are in the code (`Assistant.SystemPrompt`):
     - use only numbers the tools return, each with its source tag;
     - otherwise say *"I don't have that data in the ledger."*;
@@ -255,7 +255,7 @@ The selftest now has 67 checks: the 59 existing ones plus 8 new.
 
 Plain code, no AI, Live board only. Real records (`readings`, `/api/readings`) are not touched, and the schema is unchanged.
 
-- **Ranges:** `src/BacchusLedger/config/ranges.json` holds the defaults per wine type, plus optional per-vessel overrides under `"vessels"` (for example `"W01/F-2": { "temperature": { "min": 22, "max": 28 } }`). An override wins over the default. Edit the file, then restart the app.
+- **Ranges:** `src/BacchusLedger.Api/config/ranges.json` holds the defaults per wine type, plus optional per-vessel overrides under `"vessels"` (for example `"W01/F-2": { "temperature": { "min": 22, "max": 28 } }`). An override wins over the default. Edit the file, then restart the app.
 
   | Measurement | Default |
   |---|---|
