@@ -1,6 +1,8 @@
 using BacchusLedger.Contracts.Overview;
 using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Money;
+using BacchusLedger.Services.Mapping;
 
 namespace BacchusLedger.Services;
 
@@ -22,7 +24,7 @@ public sealed class OverviewService(IBatchRepository batches, IWineryRepository 
                 flags.Add(new CheckFlag(b.Code, b.Id, b.IsCopy, ch.Status, ch.Label, ch.Detail, ch.Source));
         }
         var kpi = new OverviewKpi(Math.Round(inCellar, 1), real, Math.Round(loss, 1), Math.Round(value, 2));
-        var onePercent = Money.OnePercentTable(await wineries.ListBySizeAsync(), s.Number("value_per_litre_usd"), s.Number("litres_per_tonne"));
+        var onePercent = new OnePercentLoss(s.Number("value_per_litre_usd"), s.Number("litres_per_tonne")).ToRows(await wineries.ListBySizeAsync());
         return new OverviewResponse(kpi, flags, onePercent, s);
     }
 

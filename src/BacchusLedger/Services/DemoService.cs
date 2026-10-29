@@ -6,6 +6,8 @@ using BacchusLedger.Repositories;
 using BacchusLedger.Domain.Vessels;
 using BacchusLedger.Domain.Losses;
 using BacchusLedger.Domain.Common;
+using BacchusLedger.Domain.Money;
+using BacchusLedger.Services.Mapping;
 
 namespace BacchusLedger.Services;
 
@@ -343,7 +345,7 @@ public sealed class DemoService(
                 rec.Add(new("Market", "1,027 wine companies in Georgia in 2023 (6 large, 29 medium, 982 small)", "TBC Capital 2024"));
                 rec.Add(new("UVP", "The only cellar record that works with qvevri, in Georgian, for Kakheti law, with no sensors and no internet needed.", "Hackathon slides"));
                 did.Add(new("Not proven yet: how much loss a winery can win back — the pilot (Nov–Dec) measures it.", "Calculated", "info"));
-                extra = new OnePercentExtra(Money.OnePercentTable(await wineries.ListBySizeAsync(), vpl, lpt));
+                extra = new OnePercentExtra(new OnePercentLoss(vpl, lpt).ToRows(await wineries.ListBySizeAsync()));
                 break;
         }
         return extra;

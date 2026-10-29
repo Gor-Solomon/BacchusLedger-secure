@@ -8,6 +8,7 @@ using BacchusLedger.Services.Assistant;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using static BacchusLedger.Services.Assistant.AssistantTexts;
+using BacchusLedger.Domain.Assistant;
 
 namespace BacchusLedger.Services;
 
@@ -66,8 +67,8 @@ public sealed class AssistantService(
                 if (text.Length == 0) throw new AssistantException("empty answer");
                 text = Scrub(cfg, text.Replace("**", ""));
                 // Enforced: every number in the answer must come from a tool result, otherwise no answer.
-                if (!AnswerGuard.NumbersFromTools(text, outputs)) { logger.LogWarning("assistant: {Provider} answer used numbers not returned by tools — replaced", p); text = NoData(lang); }
-                return new() { Mode = "ai", Provider = p, Text = text, Used = used.Distinct().ToList(), Sources = AnswerGuard.Tags(text) };
+                if (!text.UsesOnlyNumbersFrom(outputs)) { logger.LogWarning("assistant: {Provider} answer used numbers not returned by tools — replaced", p); text = NoData(lang); }
+                return new() { Mode = "ai", Provider = p, Text = text, Used = used.Distinct().ToList(), Sources = text.SourceTags() };
             }
             catch (Exception e)
             {

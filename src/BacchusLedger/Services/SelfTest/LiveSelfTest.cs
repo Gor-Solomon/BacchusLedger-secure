@@ -3,6 +3,8 @@ using BacchusLedger.Dataset;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services.Assistant;
+using BacchusLedger.Domain.Money;
+using BacchusLedger.Services.Mapping;
 
 namespace BacchusLedger.Services.SelfTest;
 
@@ -22,7 +24,7 @@ public sealed class LiveSelfTest(
             var r = await losses.AnalyzeAsync(id, s, compare: false);
             parts.Add(new[] { r.BatchCode, $"{r.TotalLossL}", $"{r.LossValueUsd}", $"{r.BottledL}", $"{r.LitresNow}", $"{r.TotalDifferenceL}" });
         }
-        parts.Add(Money.OnePercentTable(await wineries.ListBySizeAsync(), 2.99, 631));
+        parts.Add(new OnePercentLoss(2.99, 631).ToRows(await wineries.ListBySizeAsync()));
         foreach (var t in new[] { "operations", "readings", "lab", "deliveries", "orders", "batches", "batch_origins", "vessels" })
             parts.Add(await diagnostics.CountRowsAsync(t));
         return JsonSerializer.Serialize(parts);
