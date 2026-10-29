@@ -99,18 +99,22 @@ public static class Seal
     }
 
     /// Hash of every sealed entry (for the Hash column of the report).
-    public static List<object> Entries(SqliteConnection c, long batchId) =>
-        Chain(c, batchId).Select(e => (object)new { seq = e.Seq, tbl = e.Tbl, row_id = e.RowId, hash = e.Hash, prev = e.Prev }).ToList();
+    public static List<Entry> Entries(SqliteConnection c, long batchId) =>
+        Chain(c, batchId).Select(e => new Entry(e.Seq, e.Tbl, e.RowId, e.Hash, e.Prev)).ToList();
+
+    public sealed record Entry(long Seq, string Tbl, long RowId, string Hash, string Prev);
 
     /// DEMO ONLY: put back the values changed by TamperDemo; if the chain still does not verify, seal the batch again from its current rows.
-    public static object ResetDemo(SqliteConnection c, SqliteTransaction tx, long batchId)
+    public sealed record ResetResult(int Restored, bool Resealed);
+
+    public static ResetResult ResetDemo(SqliteConnection c, SqliteTransaction tx, long batchId)
     {
         var t = Db.Query(c, "SELECT * FROM seal_tamper WHERE batch_id=$1 ORDER BY rowid DESC", batchId);
         foreach (var r in t) Db.Exec(c, tx, "UPDATE lab SET temp_c=$1 WHERE id=$2", r["old_value"], r["row_id"]);
         Db.Exec(c, tx, "DELETE FROM seal_tamper WHERE batch_id=$1", batchId);
         bool resealed = false;
         if (!Verify(c, batchId).Ok) { Drop(c, tx, batchId); Ensure(c, tx, batchId); resealed = true; }
-        return new { restored = t.Count, resealed };
+        return new ResetResult(t.Count, resealed);
     }
 
     public static void EnsureAll() => Db.Write((c, tx) =>

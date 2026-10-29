@@ -189,48 +189,6 @@ app.MapGet("/api/assistant/quick/{n:int}", (int n, string? lang) =>
 app.MapPost("/api/assistant/ask", (HttpContext ctx, JsonElement body) =>
     Assistant.AskEndpoint(body, AssistantConfig.FromEnv(), Assistant.LocalGet($"http://127.0.0.1:{ctx.Connection.LocalPort}")));
 
-// ---------------- selftest (sections 5 and 6) ----------------
-// Ledger report (read-only): batch from vineyard to bottle as a double-entry ledger; vessel=W01/F-2 adds the SIMULATED live section.
-app.MapGet("/api/report", (string? batch, string? vessel) =>
-{
-    using var c = Db.Open();
-    return LedgerReport.Report(c, string.IsNullOrWhiteSpace(batch) ? null : batch, string.IsNullOrWhiteSpace(vessel) ? null : vessel) is { } r
-        ? Results.Ok(r) : Results.NotFound(new { error = "batch not found" });
-});
-
-// Secure copy: seal (hash chain + DEMO ECDSA signature), verify, and a hidden demo tamper action.
-static long? BatchIdByCode(Microsoft.Data.Sqlite.SqliteConnection c, string? code) =>
-    code == null ? null : Db.Query(c, "SELECT id FROM batches WHERE code=$1", code).FirstOrDefault()?["id"] as long?;
-app.MapPost("/api/seal", (HttpContext ctx, string? batch) =>
-{
-    var id = Db.Write((c, tx) => { Db.Exec(c, tx, Seal.Tables); var i = BatchIdByCode(c, batch); if (i != null) Seal.Ensure(c, tx, i.Value); return i; });
-    if (id == null) return Results.NotFound(new { error = "batch not found" });
-    using var c = Db.Open();
-    var s = Db.Query(c, "SELECT * FROM seal_batch WHERE batch_id=$1", id)[0];
-    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/verify.html?batch={Uri.EscapeDataString(batch!)}";
-    using var qr = new QRCoder.QRCodeGenerator();
-    var png = new QRCoder.PngByteQRCode(qr.CreateQrCode(url, QRCoder.QRCodeGenerator.ECCLevel.M)).GetGraphic(6);
-    return Results.Ok(new { batch, final_hash = s["final_hash"], signature = s["signature"], sealed_at = s["sealed_at"], entries = s["entries"], key_id = s["key_id"],
-        algorithm = "SHA-256 hash chain · ECDSA P-256 (DEMO KEY)", verify_url = url, chain = Seal.Entries(c, id.Value), qr_png = "data:image/png;base64," + Convert.ToBase64String(png) });
-});
-app.MapGet("/api/verify", (string? batch) =>
-{
-    using var c = Db.Open();
-    var id = BatchIdByCode(c, batch);
-    if (id == null) return Results.NotFound(new { error = "batch not found" });
-    return Results.Ok(new { batch, result = Seal.Verify(c, id.Value), public_key = Seal.PublicKeyPem, key_note = "DEMO KEY — not for production" });
-});
-app.MapPost("/api/demo/reset-seal", (string? batch) =>
-{
-    var r = Db.Write((c, tx) => { Db.Exec(c, tx, Seal.Tables); return BatchIdByCode(c, batch) is { } id ? Seal.ResetDemo(c, tx, id) : null; });
-    return r == null ? Results.NotFound(new { error = "batch not found" }) : Results.Ok(r);
-});
-app.MapPost("/api/demo/tamper", (string? batch) =>
-{
-    var t = Db.Write((c, tx) => BatchIdByCode(c, batch) is { } id ? Seal.TamperDemo(c, tx, id) : null);
-    return t == null ? Results.BadRequest(new { error = "no sealed lab entry to change" }) : Results.Ok(t);
-});
-
 app.MapGet("/api/selftest", (HttpContext ctx) => Results.Ok(SelfTest.Run($"http://127.0.0.1:{ctx.Connection.LocalPort}", app.Environment.WebRootPath)));
 
 app.Run();

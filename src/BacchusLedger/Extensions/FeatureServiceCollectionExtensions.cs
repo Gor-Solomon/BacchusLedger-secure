@@ -26,6 +26,12 @@ public static class FeatureServiceCollectionExtensions
     public static IServiceCollection AddJournalsFeature(this IServiceCollection services) =>
         services.AddSingleton<IJournalService, JournalService>();
 
+    public static IServiceCollection AddReportFeature(this IServiceCollection services) =>
+        services.AddSingleton<IReportService, ReportService>();
+
+    public static IServiceCollection AddSealFeature(this IServiceCollection services) =>
+        services.AddSingleton<ISealService, SealService>();
+
     public static IServiceCollection AddLiveFeature(this IServiceCollection services)
     {
         services.AddSingleton<LiveHub>();

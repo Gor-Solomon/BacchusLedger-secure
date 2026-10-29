@@ -1,3 +1,4 @@
+using BacchusLedger.Contracts.Report;
 using Microsoft.Data.Sqlite;
 
 namespace BacchusLedger;
@@ -140,10 +141,11 @@ public static class LedgerReport
         return new(entries, accounts, bal, eng);
     }
 
-    /// GET /api/report — the whole printable report. vessel = "W01/F-2" (Live board) adds the SIMULATED section.
+    /// GET /api/report — the whole printable report (ReportResponse), or VesselReportResponse when only a vessel is given;
+    /// null when the batch does not exist. vessel = "W01/F-2" (Live board) adds the SIMULATED section.
     public static object? Report(SqliteConnection c, string? batchCode, string? vessel)
     {
-        object? simulated = null;
+        SimulatedSectionDto? simulated = null;
         string? vesselName = null;
         if (vessel != null && vessel.Split('/') is [var w, var code])
         {
@@ -151,79 +153,58 @@ public static class LedgerReport
             if (vr != null)
             {
                 vesselName = V((string)vr["code"]!, vr["cellar_label"] as string);
-                simulated = new
-                {
-                    vessel = vesselName, source = "SIMULATED",
-                    note = "Simulated live data (live_events). Not part of the ledger, the balance or any journal.",
-                    alerts = Db.Query(c, """
-                        SELECT created_at, sim_time, level, rule, message, scenario, source, acknowledged FROM live_events
-                        WHERE kind='notification' AND vessel_id=$1 ORDER BY id DESC LIMIT 50
-                        """, vr["id"]),
-                    readings = Db.Query(c, "SELECT COUNT(*) n FROM live_events WHERE kind='reading' AND vessel_id=$1", vr["id"])[0]["n"],
-                };
+                var alerts = Db.Query(c, """
+                    SELECT created_at, sim_time, level, rule, message, scenario, source, acknowledged FROM live_events
+                    WHERE kind='notification' AND vessel_id=$1 ORDER BY id DESC LIMIT 50
+                    """, vr["id"]).Select(a => new SimulatedAlertDto(a["created_at"] as string, a["sim_time"] as string, a["level"] as string, a["rule"] as string,
+                        a["message"] as string, a["scenario"] as string, a["source"] as string, Db.L(a["acknowledged"]))).ToList();
+                simulated = new SimulatedSectionDto(vesselName, "SIMULATED", "Simulated live data (live_events). Not part of the ledger, the balance or any journal.",
+                    alerts, (long)Db.Query(c, "SELECT COUNT(*) n FROM live_events WHERE kind='reading' AND vessel_id=$1", vr["id"])[0]["n"]!);
             }
         }
         var br = batchCode == null ? null : Db.Query(c, """
             SELECT b.*, w.code AS winery, w.name AS winery_name FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE b.code=$1
             """, batchCode).FirstOrDefault();
         if (br == null)
-            return batchCode != null ? null : new { batch = (object?)null, vessel = vesselName, simulated, generated_at = DateTime.UtcNow.ToString("o") };
+            return batchCode != null ? null : new VesselReportResponse(null, vesselName, simulated, DateTime.UtcNow.ToString("o"));
 
         long id = (long)br["id"]!;
         var l = Build(c, id);
         var eng = l.Engine;
-        var timeline = new List<object>();
+        var timeline = new List<TimelineRowDto>();
         var harvest = l.Entries.Where(e => e.Kind == "harvest").ToList();
         if (harvest.Count > 0)
-            timeline.Add(new { date = harvest[0].Date, step = "Harvest", vessels = $"{harvest.Count} {(harvest.Count == 1 ? "delivery" : "deliveries")} → reception", volume = $"{harvest.Sum(e => e.Amount):N0} kg" });
+            timeline.Add(new(harvest[0].Date, "Harvest", $"{harvest.Count} {(harvest.Count == 1 ? "delivery" : "deliveries")} → reception", $"{harvest.Sum(e => e.Amount):N0} kg"));
         foreach (var s in eng.Stages)
-            timeline.Add(new
-            {
-                date = s.Date, step = s.StageKey.Replace('_', ' '),
-                vessels = s.Type == "stock_check" ? s.From : s.From != null && s.To != null ? $"{s.From} → {s.To}" : s.To ?? s.From ?? "—",
-                volume = s.Type switch
+            timeline.Add(new(s.Date, s.StageKey.Replace('_', ' '),
+                s.Type == "stock_check" ? s.From : s.From != null && s.To != null ? $"{s.From} → {s.To}" : s.To ?? s.From ?? "—",
+                s.Type switch
                 {
                     "intake" => l.Entries.FirstOrDefault(e => e.OpId == s.OpId)?.Amount is { } kg ? $"{kg:N0} kg" : s.Note ?? "—",
                     "bottling" or "warehouse" => $"{s.Bottles:N0} bottles" + (s.AfterL != null ? $" · {s.AfterL:N0} L" : ""),
                     _ => s.AfterL != null ? $"{s.AfterL:N0} L" + (s.LossL is > 0 ? $" (−{s.LossL:N0} L)" : "") : "—",
-                },
-            });
+                }));
         var lab = Db.Query(c, """
             SELECT l.id, l.date, v.code AS vessel, l.stage, l.sugar_gl, l.temp_c, l.ph, l.ta_gl, l.rs_gl, l.note, l.source FROM lab l
             LEFT JOIN vessels v ON v.id=l.vessel_id WHERE l.batch_id=$1 ORDER BY l.date, l.id
-            """, id);
+            """, id).Select(r => new ReportLabRowDto((long)r["id"]!, r["date"] as string, r["vessel"] as string, r["stage"] as string, Db.D(r["sugar_gl"]), Db.D(r["temp_c"]),
+                Db.D(r["ph"]), Db.D(r["ta_gl"]), Db.D(r["rs_gl"]), r["note"] as string, r["source"] as string)).ToList();
         // Readings that are not copies of the lab sheet above (entered values, e.g. initial Brix, hydrometer).
         var readings = Db.Query(c, """
             SELECT r.id, r.taken_at, v.code AS vessel, r.type, r.value, r.unit, r.instrument, r.person, r.note, r.source FROM readings r
             LEFT JOIN vessels v ON v.id=r.vessel_id
             WHERE r.batch_id=$1 ORDER BY r.taken_at, r.id
-            """, id);
-        return new
-        {
-            batch = new
-            {
-                code = br["code"], name = br["name"], winery = br["winery"], winery_name = br["winery_name"], wine_type = br["wine_type"], technology = br["technology"],
-                variety = br["variety"], vintage = br["vintage"], abv = br["abv"], status = br["status"], grapes_kg = br["grapes_kg"], source = br["source_note"],
-            },
-            vessel = vesselName,
-            timeline,
-            entries = l.Entries.Select(e => new
-            {
-                no = e.No, op_id = e.OpId, chain_ref = e.Ref, date = e.Date, kind = e.Kind, text = e.Text, source = e.Source, ratio = e.Ratio,
-                debit = new { account = e.Debit, amount = e.Amount, unit = e.Unit },
-                credit = new { account = e.Credit, amount = e.CreditAmount ?? e.Amount, unit = e.CreditUnit ?? e.Unit },
-            }),
-            accounts = l.Accounts.Select(a => new { name = a.Name, unit = a.Unit, debit = a.Debit, credit = a.Credit, balance = a.Balance }),
-            balance = new
-            {
-                grapes_kg = l.Balance.GrapesKg, harvested_kg = l.Balance.HarvestedKg, pressed_kg = l.Balance.PressedKg, grapes_left_kg = l.Balance.GrapesLeftKg, kg_gap = l.Balance.KgGap,
-                in_l = l.Balance.InL, bottled_l = l.Balance.BottledL, in_vessels_l = l.Balance.InVesselsL, losses_l = l.Balance.LossesL, gap_l = l.Balance.GapL,
-                has_litres = l.Balance.HasLitres, engine_total_loss_l = eng.TotalLossL, engine_matches = l.Balance.EngineMatches, balanced = l.Balance.Balanced,
-                checks = eng.Checks.Select(x => new { label = x.Label, status = x.Status, detail = x.Detail }),
-            },
-            lab, readings, simulated,
-            generated_at = DateTime.UtcNow.ToString("o"),
-        };
+            """, id).Select(r => new ReportReadingDto((long)r["id"]!, r["taken_at"] as string, r["vessel"] as string, r["type"] as string, Db.D(r["value"]), r["unit"] as string,
+                r["instrument"] as string, r["person"] as string, r["note"] as string, r["source"] as string)).ToList();
+        var batch = new ReportBatchDto(br["code"] as string, br["name"] as string, br["winery"] as string, br["winery_name"] as string, br["wine_type"] as string,
+            br["technology"] as string, br["variety"] as string, Db.L(br["vintage"]), Db.D(br["abv"]), br["status"] as string, Db.D(br["grapes_kg"]), br["source_note"] as string);
+        var entries = l.Entries.Select(e => new LedgerEntryDto(e.No, e.OpId, e.Ref, e.Date, e.Kind, e.Text, e.Source, e.Ratio,
+            new LedgerSideDto(e.Debit, e.Amount, e.Unit), new LedgerSideDto(e.Credit, e.CreditAmount ?? e.Amount, e.CreditUnit ?? e.Unit))).ToList();
+        var accounts = l.Accounts.Select(a => new LedgerAccountDto(a.Name, a.Unit, a.Debit, a.Credit, a.Balance)).ToList();
+        var b = l.Balance;
+        var balance = new LedgerBalanceDto(b.GrapesKg, b.HarvestedKg, b.PressedKg, b.GrapesLeftKg, b.KgGap, b.InL, b.BottledL, b.InVesselsL, b.LossesL, b.GapL,
+            b.HasLitres, eng.TotalLossL, b.EngineMatches, b.Balanced, eng.Checks.Select(x => new BalanceCheckDto(x.Label, x.Status, x.Detail)).ToList());
+        return new ReportResponse(batch, vesselName, timeline, entries, accounts, balance, lab, readings, simulated, DateTime.UtcNow.ToString("o"));
     }
 }
 
@@ -266,14 +247,14 @@ public static class LedgerSelfTest
             {
                 string Counts() => string.Join(",", new[] { "operations", "readings", "lab", "batches", "deliveries", "batch_origins", "live_events" }
                     .Select(t => Db.Query(c2, $"SELECT COUNT(*) n FROM {t}")[0]["n"]));
-                string Ledger() => System.Text.Json.JsonSerializer.Serialize(LedgerReport.Report(c2, "W03-B3-2025", null));
+                string Ledger() => System.Text.Json.JsonSerializer.Serialize(LedgerReport.Report(c2, "W03-B3-2025", null), LiveHub.Json);
                 var before = Ledger();
                 var sim0 = new LiveSim(seed: 3) { On = true };
                 sim0.Start(c2, new Dictionary<string, string>(Db.DefaultSettings));
                 sim0.SetScenario(c2, "hot");
                 for (int i = 0; i < 6; i++) sim0.Tick(c2, tx);
                 var c0 = Counts();
-                var withSim = System.Text.Json.JsonSerializer.Serialize(LedgerReport.Report(c2, "W03-B3-2025", "W03/Q-3"));
+                var withSim = System.Text.Json.JsonSerializer.Serialize(LedgerReport.Report(c2, "W03-B3-2025", "W03/Q-3"), LiveHub.Json);
                 var after = Ledger();
                 return (StripTime(before) == StripTime(after), withSim.Contains("\"source\":\"SIMULATED\""), Counts() == c0);
             });

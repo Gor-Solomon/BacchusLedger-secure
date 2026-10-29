@@ -29,6 +29,8 @@ public sealed class Startup
         services.AddVesselsFeature();
         services.AddReadingsFeature();
         services.AddJournalsFeature();
+        services.AddReportFeature();
+        services.AddSealFeature();
         services.AddLiveFeature();
     }
 
