@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using BacchusLedger.Contracts.Cellar;
 using BacchusLedger.Extensions;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Services;
 
@@ -43,19 +44,19 @@ public sealed class CellarService(IBatchRepository batches, IVesselRepository ve
         var list2 = (await vessels.ListForCellarAsync()).Select(v =>
         {
             var key = $"{v.WineryCode}/{v.Code}";
-            var m = Calibration.TryParse(v.CalibrationJson);
+            var m = VesselCalibration.TryParse(v.CalibrationJson);
             // outline for drawing: radius / max radius at z / H (A5 profile for qvevri; generalised A5 shape when a qvevri has no measurements, drawing only)
-            var model = m?.Kind == "qvevri" ? m : v.Type == "qvevri" ? Calibration.Parse(Calibration.QvevriJson()) : null;
+            var model = m?.Kind == "qvevri" ? m : v.Type == "qvevri" ? VesselCalibration.Parse(new QvevriProfile().ToCalibrationJson()) : null;
             List<double[]>? outline = null;
             if (model != null)
             {
-                var t = JsonNode.Parse(m?.Kind == "qvevri" ? v.CalibrationJson! : Calibration.QvevriJson())!["table"]!.AsArray();
-                double rmax = t.Max(r => (double)r![1]!), h = model.H;
+                var t = JsonNode.Parse(m?.Kind == "qvevri" ? v.CalibrationJson! : new QvevriProfile().ToCalibrationJson())!["table"]!.AsArray();
+                double rmax = t.Max(r => (double)r![1]!), h = model.HeightCm;
                 outline = t.Where((r, i) => (double)r![0]! % 10 == 0 || i == t.Count - 1).Select(r => new[] { Math.Round((double)r![0]! / h, 4), Math.Round((double)r![1]! / rmax, 4) }).ToList();
             }
             var contents = litres.GetValueOrDefault(key) ?? [];
             return new CellarVesselDto(v.Id, v.WineryCode, v.Code, v.CellarLabel, v.Name, v.Type, v.CapacityL, m == null ? null : m.Kind == "cylinder" ? v.Source : "Dataset A5",
-                m != null, m?.Kind == "cylinder" ? m.D : null, m?.H, outline, Math.Round(contents.Sum(x => x.Litres), 1), contents, grapes.GetValueOrDefault(key),
+                m != null, m?.Kind == "cylinder" ? m.DiameterCm : null, m?.HeightCm, outline, Math.Round(contents.Sum(x => x.Litres), 1), contents, grapes.GetValueOrDefault(key),
                 attention.ContainsKey(key) ? "amber" : "ok", attention.GetValueOrDefault(key));
         }).ToList();
         var peak = totals.Count == 0 ? day : totals.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First().Key;

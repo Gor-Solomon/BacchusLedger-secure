@@ -2,6 +2,7 @@ using BacchusLedger.Dataset;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
 using BacchusLedger.Services;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Infrastructure.Persistence;
 
@@ -19,9 +20,9 @@ public sealed class DatabaseSeeder(
 
         // Vessels (section 4.8): tank sizes DEMO ASSUMPTION, qvevri shape Dataset A5
         Task Tank(string w, string code, string name, double d, double h) => vessels.InsertAsync(new NewVessel(w, code, "tank", name,
-            Calibration.CylinderJson(d, h), Math.Round(Calibration.CylinderLitres(d, h), 1), "DEMO ASSUMPTION"));
-        var qj = Calibration.QvevriJson();
-        var qcap = Math.Round(Calibration.Parse(qj).Capacity, 1);
+            new CylinderTank(d, h).ToCalibrationJson(), Math.Round(new CylinderTank(d, h).Capacity, 1), "DEMO ASSUMPTION"));
+        var qj = new QvevriProfile().ToCalibrationJson();
+        var qcap = Math.Round(VesselCalibration.Parse(qj).Capacity, 1);
         Task Qvevri(string w, string code) => vessels.InsertAsync(new NewVessel(w, code, "qvevri", $"Qvevri {code}", qj, qcap, "Dataset A5"));
 
         await Tank("W01", "F-1", "Fermentation tank F-1", 230, 290);

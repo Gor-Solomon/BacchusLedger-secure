@@ -1,5 +1,6 @@
 using BacchusLedger.Dataset;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Services.SelfTest;
 
@@ -20,12 +21,12 @@ public sealed class CoreSelfTest(
         static bool Near(double? a, double b, double tol) => SelfTestContext.Near(a, b, tol);
 
         // Section 5: calibration
-        var q = Calibration.Parse(Calibration.QvevriJson());
-        Add("calibration", "Qvevri raw total (before scaling) ≈ 1,490 L", "≈ 1490", $"{Calibration.QvevriRawTotal():0.0}", Near(Calibration.QvevriRawTotal(), 1490, 15));
+        var q = VesselCalibration.Parse(new QvevriProfile().ToCalibrationJson());
+        Add("calibration", "Qvevri raw total (before scaling) ≈ 1,490 L", "≈ 1490", $"{new QvevriProfile().RawTotalLitres():0.0}", Near(new QvevriProfile().RawTotalLitres(), 1490, 15));
         Add("calibration", "Qvevri full volume = 1,500 L ± 1", "1500 ± 1", $"{q.Capacity:0.00}", Near(q.Capacity, 1500, 1));
-        var t = Calibration.CylinderLitres(220, 290);
+        var t = new CylinderTank(220, 290).Capacity;
         Add("calibration", "Ø220×290 tank capacity ≈ 11,024 L", "≈ 11024", $"{t:0.0}", Near(t, 11024, 1));
-        var t3 = Calibration.Parse(Calibration.CylinderJson(110, 160));
+        var t3 = VesselCalibration.Parse(new CylinderTank(110, 160).ToCalibrationJson());
         var dip = t3.DipForLitres(1188);
         Add("calibration", "T3-x cylinder: 1,188 L ↔ dip ≈ 35.0 cm", "35.0", $"{dip:0.00}", Math.Round(dip, 1) == 35.0);
         Add("calibration", "T3-x cylinder: dip 35.0 cm → ≈ 1,188 L", "≈ 1188", $"{t3.LitresAtDip(35.0):0.0}", Near(t3.LitresAtDip(35.0), 1188, 1));

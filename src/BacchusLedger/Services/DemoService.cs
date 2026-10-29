@@ -3,6 +3,7 @@ using BacchusLedger.Dataset;
 using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Services;
 
@@ -398,7 +399,7 @@ public sealed class DemoService(
             {
                 rec.Add(new("Separation", "Q-3 → T3-1 · 1,230 L", "Dataset A6.1"));
                 rec.Add(new("Lab 20.11.2025 · T3-1 · storage", "15.2 °C · pH 3.47 · TA 5.9 · RS 2.3", "Dataset A4.2"));
-                var m = Calibration.TryParse((await vessels.GetAsync("W03", "Q-3"))?.CalibrationJson) ?? Calibration.Parse(Calibration.QvevriJson());
+                var m = VesselCalibration.TryParse((await vessels.GetAsync("W03", "Q-3"))?.CalibrationJson) ?? VesselCalibration.Parse(new QvevriProfile().ToCalibrationJson());
                 var dip = m.DipForLitres(1230);
                 did.Add(new($"Qvevri dip: 1,230 L in Q-3 ↔ dip {dip:0.0} cm from the rim (A5 table)", "Calculated", "info"));
                 did.Add(new($"Yield = 1,230 / 1.85 t = {1230 / 1.85:0} L/t", "Calculated", null));

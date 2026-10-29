@@ -5,6 +5,7 @@ using BacchusLedger.Contracts.Vessels;
 using BacchusLedger.Extensions;
 using BacchusLedger.Models;
 using BacchusLedger.Repositories;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Services;
 
@@ -20,7 +21,7 @@ public sealed class VesselService(
     public async Task<ServiceResult<VesselDetailResponse>> GetAsync(string code, string? winery)
     {
         if (await vessels.FindAsync(code, winery) is not { } v) return ServiceResult<VesselDetailResponse>.NotFound("vessel not found");
-        var m = Calibration.TryParse(v.CalibrationJson);
+        var m = VesselCalibration.TryParse(v.CalibrationJson);
         // Inner shape for drawing: [z_cm, radius_cm]
         List<double[]>? profile = null;
         if (m?.Kind == "qvevri")
@@ -28,21 +29,21 @@ public sealed class VesselService(
             var t = JsonNode.Parse(v.CalibrationJson!)!["table"]!.AsArray();
             profile = t.Where((r, i) => (double)r![0]! % 5 == 0 || i == t.Count - 1).Select(r => new[] { (double)r![0]!, (double)r![1]! }).ToList();
         }
-        else if (m != null) profile = [[0, m.D / 2], [m.H, m.D / 2]];
+        else if (m != null) profile = [[0, m.DiameterCm / 2], [m.HeightCm, m.DiameterCm / 2]];
         var used = await vessels.ListBatchesUsingAsync(v.Id);
-        var chart = m == null ? [] : Calibration.DipChart(m, 5).Select(p => new DipChartRowDto(p.DipCm, p.FillCm, p.Litres)).ToList();
+        var chart = m == null ? [] : m.DipChart(5).Select(p => new DipChartRowDto(p.DipCm, p.FillCm, p.Litres)).ToList();
         return new VesselDetailResponse(ToDto(v, await ContentsAsync()), chart, profile, used);
     }
 
     public async Task<ServiceResult<object>> ConvertAsync(string code, double? dip, double? litres, string? winery)
     {
         if (await vessels.FindAsync(code, winery) is not { } v) return ServiceResult<object>.NotFound("vessel not found");
-        var m = Calibration.TryParse(v.CalibrationJson);
+        var m = VesselCalibration.TryParse(v.CalibrationJson);
         if (m == null) return ServiceResult<object>.BadRequest("Volume unknown — enter litres manually");
         if (dip is { } d)
         {
-            if (d < 0 || d > m.H) return ServiceResult<object>.BadRequest($"dip must be 0–{m.H} cm");
-            return ServiceResult<object>.Ok(new DipToLitresResponse(code, d, m.H - d, Math.Round(m.LitresAtDip(d), 1), Math.Round(m.Capacity, 1), "Calculated"));
+            if (d < 0 || d > m.HeightCm) return ServiceResult<object>.BadRequest($"dip must be 0–{m.HeightCm} cm");
+            return ServiceResult<object>.Ok(new DipToLitresResponse(code, d, m.HeightCm - d, Math.Round(m.LitresAtDip(d), 1), Math.Round(m.Capacity, 1), "Calculated"));
         }
         if (litres is { } l) return ServiceResult<object>.Ok(new LitresToDipResponse(code, l, Math.Round(m.DipForLitres(l), 1), Math.Round(m.Capacity, 1), "Calculated"));
         return ServiceResult<object>.BadRequest("pass ?dip= or ?litres=");
@@ -64,7 +65,7 @@ public sealed class VesselService(
                 if (await vessels.ExistsAsync(winery, code)) return ServiceResult<VesselCreatedResponse>.BadRequest($"Vessel {code} already exists at {winery}");
                 string? json = null; double? cap = known;
                 if (type == "qvevri") (json, cap, _) = QvevriCalibration(null, null, null, depth, neck, max, known);
-                else if (dCm != null && hCm != null) { json = Calibration.CylinderJson(dCm.Value, hCm.Value); cap = Math.Round(Calibration.CylinderLitres(dCm.Value, hCm.Value), 1); }
+                else if (dCm != null && hCm != null) { json = new CylinderTank(dCm.Value, hCm.Value).ToCalibrationJson(); cap = Math.Round(new CylinderTank(dCm.Value, hCm.Value).Capacity, 1); }
                 var label = body.Str("cellar_label");
                 var name = body.Str("name") is { Length: > 0 } n ? n : (type == "qvevri" ? $"Qvevri {code}" : $"Tank {code}");
                 var id = await vessels.InsertAsync(new NewVessel(winery, code, type, name, json, cap, src,
@@ -117,27 +118,27 @@ public sealed class VesselService(
 
     static VesselDto ToDto(VesselRecord v, Dictionary<string, List<VesselContentDto>> contents)
     {
-        var m = Calibration.TryParse(v.CalibrationJson);
+        var m = VesselCalibration.TryParse(v.CalibrationJson);
         var cj = m == null ? null : JsonNode.Parse(v.CalibrationJson!)!;
         var list = contents.TryGetValue($"{v.WineryCode}/{v.Code}", out var l) ? l : [];
         var model = (string?)cj?["model"];
         return new VesselDto(v.Id, v.WineryCode, v.Code, v.Type, v.Name, v.CapacityL, v.Source, v.CellarLabel, v.CellarLabelSource, v.DepthCm, v.NeckDCm, v.MaxDCm,
             v.KnownVolumeL, m != null, m?.Kind ?? "none", model, CalibrationNote(v, m, cj),
             m == null ? (v.CapacityL != null ? "Entered" : null) : m.Kind == "cylinder" ? v.Source : model == "measured" ? "Calculated" : "Dataset A5",
-            m?.Kind == "cylinder" ? m.D : null, m?.H,
+            m?.Kind == "cylinder" ? m.DiameterCm : null, m?.HeightCm,
             m?.Kind == "qvevri" ? (double?)cj!["raw_total_l"] : null, m?.Kind == "qvevri" ? (double?)cj!["scale"] : null,
             list, list.Sum(x => x.Litres));
     }
 
-    static string CalibrationNote(VesselRecord v, Calibration.Model? m, JsonNode? cj)
+    static string CalibrationNote(VesselRecord v, VesselCalibration? m, JsonNode? cj)
     {
         var known = v.KnownVolumeL;
         if (m == null)
             return known != null ? $"Known volume {known:N0} L (Entered). No measurements — dip → litres is not available; enter litres manually." : "Volume unknown — enter litres manually";
         if (m.Kind == "cylinder")
-            return $"Cylinder Ø{m.D:0.#} × {m.H:0.#} cm" + (v.Source == "DEMO ASSUMPTION" ? " — size is a DEMO ASSUMPTION" : " (Entered)");
+            return $"Cylinder Ø{m.DiameterCm:0.#} × {m.HeightCm:0.#} cm" + (v.Source == "DEMO ASSUMPTION" ? " — size is a DEMO ASSUMPTION" : " (Entered)");
         if ((string?)cj?["model"] == "measured")
-            return $"A5 shape scaled to the entered measurements (depth {m.H:0.#} cm, neck Ø{v.NeckDCm:0.#}, max Ø{v.MaxDCm:0.#})" +
+            return $"A5 shape scaled to the entered measurements (depth {m.HeightCm:0.#} cm, neck Ø{v.NeckDCm:0.#}, max Ø{v.MaxDCm:0.#})" +
                    (known != null ? $", radii scaled to the known volume {known:N0} L" : "");
         return "generalised A5 model (demo)" + (known != null ? $" — known volume {known:N0} L entered; add depth and diameters to use your own shape" : "");
     }
@@ -149,8 +150,8 @@ public sealed class VesselService(
     {
         if (depth is > 0 && neck is > 0 && max is > 0)
         {
-            var j = Calibration.QvevriJson(depth.Value, neck.Value, max.Value, known, "measured");
-            return (j, Math.Round(Calibration.Parse(j).Capacity, 1), "Entered");
+            var j = new QvevriProfile(depth.Value, neck.Value, max.Value).ToCalibrationJson(known, "measured");
+            return (j, Math.Round(VesselCalibration.Parse(j).Capacity, 1), "Entered");
         }
         if (currentJson != null && (string?)JsonNode.Parse(currentJson)?["model"] == "A5" && currentSource == "Dataset A5") return (currentJson, currentCapacity, "Dataset A5");
         return (null, known, "Entered");

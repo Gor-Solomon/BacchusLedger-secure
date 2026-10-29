@@ -7,6 +7,7 @@ using BacchusLedger.Models;
 using BacchusLedger.Options;
 using BacchusLedger.Repositories;
 using Microsoft.Extensions.Options;
+using BacchusLedger.Domain.Vessels;
 
 namespace BacchusLedger.Services;
 
@@ -90,7 +91,7 @@ public sealed class LiveBoardService(
         var res = await unitOfWork.WriteAsync(async () =>
         {
             if (await vessels.FindAsync(code, null) is not { } v) return ServiceResult<SensorReadingResponse>.NotFound("vessel not found");
-            var m = Calibration.TryParse(v.CalibrationJson);
+            var m = VesselCalibration.TryParse(v.CalibrationJson);
             if (m == null) return ServiceResult<SensorReadingResponse>.BadRequest("Volume unknown — enter litres manually");
             var l = Math.Round(m.LitresAtDip(dip), 1);
             await events.InsertSensorReadingAsync(v.Id, dip, l, DateTime.UtcNow.ToString("o"));
