@@ -40,7 +40,7 @@ public static class DependencyInjection
         .AddScoped<IDemoRepository, EfDemoRepository>()
         .AddScoped<IMaintenanceRepository, EfMaintenanceRepository>()
         .AddScoped<ISealRepository, EfSealRepository>()
-        .AddScoped<IJournalRepository, SqliteJournalRepository>()
+        .AddScoped<IJournalRepository, EfJournalRepository>()
         .AddScoped<IDiagnosticsRepository, SqliteDiagnosticsRepository>()
         .AddScoped<DatabaseSeeder>()
         .AddScoped<IDatabaseInitializer, DatabaseInitializer>();
