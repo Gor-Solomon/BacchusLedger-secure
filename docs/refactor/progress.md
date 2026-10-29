@@ -7,7 +7,7 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 | 1 | Safety net: solution file, check script, API baseline, remove IDE files | done |
 | 2 | Program + Startup + controllers + services (one project) | done |
 | 3 | Repositories + remove static infrastructure | done |
-| 4 | Domain classes (pure logic) | todo |
+| 4 | Domain classes (pure logic) | done |
 | 5 | Split into Domain, Application, Infrastructure and Api projects | todo |
 | 6 | Tests, CI, docs, merge | todo |
 
@@ -57,3 +57,21 @@ Plan: [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Branch: `refactor/layers` (local com
 - `Console.WriteLine` replaced by `ILogger<T>`. `HttpClient` request logging is set to Warning in appsettings.json.
 - Database errors reach services as `RepositoryException` (same message text as before), so services do not depend on SQLite.
 - Left for step 4 (pure static classes): `LossEngine`, `Calibration`, `Readings`, `Ranges`, `LedgerReport`, `Money`, `Fmt`, `AnswerGuard`.
+
+## Step 4 notes
+
+One commit per calculator, each with build + `check.ps1` + write replay passing. `Domain/` uses nothing outside `Domain/`.
+
+| Old static code | Domain class(es) |
+|---|---|
+| `Calibration` | `Vessels/VesselCalibration` (dip ↔ litres, dip chart), `Vessels/QvevriProfile` (A5 shape), `Vessels/CylinderTank`, `DipChartPoint` |
+| `LossEngine.Replay` + types | `Losses/LossCalculator`, `StageNorms`, `CellarOperation`, `LossStage`, `LossCheck`, `LossResult`, `StageComparison` |
+| `Readings` (formulas, validation) | `Readings/InitialBrix` (potential ABV, Brix → SG, progress %), `ReadingCalculator`, `ReadingValidator`, `ReadingInput`, `ReadingTypes` |
+| `Ranges`, `RangeTracker` | `Ranges/RangeConfig`, `RangeRule`, `RangeTracker` |
+| `LedgerReport.Build` | `Ledger/DoubleEntryBooking`, `LedgerEntry`, `LedgerAccount`, `LedgerBalance`, `Ledger`, `HarvestDelivery` |
+| seal hashing (in `Seal`) | `Seal/HashChain` |
+| `Money.OnePercentTable` | `Money/OnePercentLoss` |
+| `Fmt` | `Common/DisplayTextExtensions` (`ToDisplayDate`, `ToDisplayDateTime`, `WithCellarLabel`) |
+| `AnswerGuard` | `Assistant/AnswerTextExtensions` (`UsesOnlyNumbersFrom`, `SourceTags`) |
+
+`LossEngine`, `Calibration`, `Readings`, `Ranges`, `Report`, `Money`, `Fmt` files are gone.
