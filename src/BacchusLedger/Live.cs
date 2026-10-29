@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
+using BacchusLedger.Contracts.Live;
 using Microsoft.Data.Sqlite;
 
 namespace BacchusLedger;
@@ -308,29 +309,17 @@ public sealed class LiveSim
     /// Rule names: temperature keeps "temp_high" (as before) plus "temp_low"; the others are e.g. "density_low", "level_high".
     public static string RangeRule(string metric, string dir) => (metric == "temperature" ? "temp" : metric) + (dir == "too low" ? "_low" : "_high");
 
-    public object State() => new
-    {
-        on = On, scenario = Scenario, scenario_title = ScenarioTitles[Scenario], sim_time = SimTime.ToString("yyyy-MM-ddTHH:mm"),
-        // temp_max = F-2's allowed maximum from config/ranges.json (the chart's dashed line)
-        thresholds = new { temp_max = V("F-2")?.Ranges.GetValueOrDefault("temperature")?.Max ?? 30, level_drop_l = S("live_level_drop_l"), stuck_min_sg = S("live_stuck_min_sg") },
-        range_alerts = Vessels.SelectMany(v => v.Range.Alerts.Values.Select(a => new
-        {
-            vessel_code = v.Code, vessel_name = v.Name, batch = v.Batch, metric = a.Metric, direction = a.Direction, value = a.Value,
-            min = a.Range.Min, max = a.Range.Max, unit = a.Range.Unit, since = a.Since, source = "SIMULATED",
-        })),
-        vessels = Vessels.Where(v => v.Streaming).Select(v => new
-        {
-            id = v.Id, code = v.Code, winery = v.Winery, name = v.Name, type = v.Type, fermenting = v.Fermenting,
-            temp = Math.Round(v.Temp, 1), level = Math.Round(v.Level, 1), capacity = v.Capacity, density = v.Density == null ? (double?)null : Math.Round(v.Density.Value, 4),
-            status = v.Status, alerts = v.Alerts, batch = v.Batch, wine_color = v.WineColor,
-            ranges = v.Ranges.ToDictionary(kv => kv.Key, kv => new
-            {
-                min = kv.Value.Min, max = kv.Value.Max, unit = kv.Value.Unit, from = kv.Value.From,
-                in_range = v.Range.InRange.TryGetValue(kv.Key, out var ok) ? ok : (bool?)null,
-            }),
-        }),
-        source = "SIMULATED",
-    };
+    public LiveStateDto State() => new(
+        On, Scenario, ScenarioTitles[Scenario], SimTime.ToString("yyyy-MM-ddTHH:mm"),
+        new LiveThresholdsDto(V("F-2")?.Ranges.GetValueOrDefault("temperature")?.Max ?? 30, S("live_level_drop_l"), S("live_stuck_min_sg")),
+        Vessels.SelectMany(v => v.Range.Alerts.Values.Select(a =>
+            new RangeAlertDto(v.Code, v.Name, v.Batch, a.Metric, a.Direction, a.Value, a.Range.Min, a.Range.Max, a.Range.Unit, a.Since, "SIMULATED"))).ToList(),
+        Vessels.Where(v => v.Streaming).Select(v => new LiveVesselDto(
+            v.Id, v.Code, v.Winery, v.Name, v.Type, v.Fermenting, Math.Round(v.Temp, 1), Math.Round(v.Level, 1), v.Capacity,
+            v.Density == null ? null : Math.Round(v.Density.Value, 4), v.Status, new Dictionary<string, string>(v.Alerts), v.Batch, v.WineColor,
+            v.Ranges.ToDictionary(kv => kv.Key, kv => new RangeStateDto(kv.Value.Min, kv.Value.Max, kv.Value.Unit, kv.Value.From,
+                v.Range.InRange.TryGetValue(kv.Key, out var ok) ? ok : null)))).ToList(),
+        "SIMULATED");
 
     /// A real sensor (POST /api/sensors/reading) feeds the same stream; its events are tagged SENSOR, not SIMULATED.
     public static LiveEvent SensorEvent(long vesselId, string code, string? name, double litres) => new()
@@ -410,7 +399,7 @@ public sealed class LiveService(LiveHub hub) : BackgroundService
                 return e;
             });
         }
-        hub.Publish("tick", new { state = Sim.State(), readings = evs.Where(e => e.Kind == "reading"), notifications = evs.Where(e => e.Kind == "notification") });
+        hub.Publish("tick", new LiveTickMessage(Sim.State(), evs.Where(e => e.Kind == "reading").ToList(), evs.Where(e => e.Kind == "notification").ToList()));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stop)

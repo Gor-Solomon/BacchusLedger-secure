@@ -36,6 +36,7 @@ public static class FeatureServiceCollectionExtensions
     {
         services.AddSingleton<LiveHub>();
         services.AddSingleton<LiveService>();
+        services.AddSingleton<ILiveBoardService, LiveBoardService>();
         services.AddHostedService(sp => sp.GetRequiredService<LiveService>());
         return services;
     }

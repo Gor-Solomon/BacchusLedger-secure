@@ -10,15 +10,6 @@ startup.ConfigureServices(builder.Services);
 var app = builder.Build();
 startup.Configure(app);
 
-// ---------------- helpers ----------------
-/// Find a vessel by internal code or by its cellar label (what is written on the tape in the cellar).
-static Dictionary<string, object?>? VesselRow(SqliteConnection c, string code, string? winery) =>
-    Db.Query(c, """
-        SELECT v.*, w.code AS winery_code FROM vessels v JOIN wineries w ON w.id=v.winery_id
-        WHERE (v.code=$1 OR (COALESCE(v.cellar_label,'')<>'' AND lower(trim(v.cellar_label))=lower(trim($1)))) AND ($2 IS NULL OR w.code=$2)
-        ORDER BY v.code=$1 DESC, v.id
-        """, code, winery).FirstOrDefault();
-
 // "Try: W03 filtration with dip 35.0 cm" — a fresh copy of W03 batch 3 up to the stock check
 app.MapPost("/api/try/w03", () => Db.Write((c, tx) =>
 {
@@ -62,88 +53,6 @@ app.MapPost("/api/demo/readings/start", (string? vessel) => Db.Write((c, tx) =>
         """, code, vessel == "new" ? "qvevri" : "classic");
     return Results.Ok(new { batch_id = id, batch_code = code, vessel = vcode, winery = "W01" });
 }));
-
-// Optional stub: sensor reading -> calibrated litres
-// Feeds the same live pipeline as the simulator (events tagged SENSOR) — a real ESP32 / WINEGRID can replace the simulator later.
-app.MapPost("/api/sensors/reading", (JsonElement body, LiveHub hub) =>
-{
-    var code = body.GetProperty("vessel").GetString()!;
-    var dip = body.GetProperty("dip_cm").GetDouble();
-    LiveEvent? ev = null;
-    var res = Db.Write((c, tx) =>
-    {
-        var v = VesselRow(c, code, null);
-        if (v == null) return Results.NotFound(new { error = "vessel not found" });
-        var m = Calibration.TryParse(v["calibration_json"] as string);
-        if (m == null) return Results.BadRequest(new { error = "Volume unknown — enter litres manually" });
-        var l = Math.Round(m.LitresAtDip(dip), 1);
-        Db.Exec(c, tx, "INSERT INTO sensor_readings(vessel_id,dip_cm,litres,created_at) VALUES($1,$2,$3,$4)", v["id"], dip, l, DateTime.UtcNow.ToString("o"));
-        ev = LiveSim.SensorEvent((long)v["id"]!, (string)v["code"]!, v["cellar_label"] as string, l);
-        ev.Id = Db.Insert(c, tx, "INSERT INTO live_events(created_at,sim_time,vessel_id,vessel_code,vessel_name,kind,metric,value,unit,source) VALUES($1,$2,$3,$4,$5,'reading','level',$6,'L','SENSOR')",
-            ev.CreatedAt, ev.SimTime, ev.VesselId, ev.VesselCode, ev.VesselName, l);
-        return Results.Ok(new { vessel = code, dip_cm = dip, litres = l, source = "Calculated" });
-    });
-    if (ev != null) hub.Publish("sensor", ev);
-    return res;
-});
-
-// ---------------- LIVE mode (Update 3) — SIMULATED ----------------
-app.MapGet("/api/live/state", (LiveService live) => Results.Ok(live.Sim.State()));
-app.MapPost("/api/live/on", (LiveService live) => { live.TurnOn(); live.Tick(); return Results.Ok(live.Sim.State()); });
-app.MapPost("/api/live/off", (LiveService live) => { live.TurnOff(); return Results.Ok(live.Sim.State()); });
-app.MapPost("/api/live/scenario/{name}", (string name, LiveService live) =>
-{
-    if (!LiveSim.Scenarios.Contains(name)) return Results.NotFound(new { error = "unknown scenario" });
-    live.SetScenario(name);
-    return Results.Ok(live.Sim.State());
-});
-app.MapGet("/api/live/events", (string? kind, string? vessel, int? limit) => Results.Ok(Db.Query("""
-    SELECT * FROM live_events WHERE ($1 IS NULL OR kind=$1) AND ($2 IS NULL OR vessel_code=$2) ORDER BY id DESC LIMIT $3
-    """, kind, vessel, Math.Clamp(limit ?? 50, 1, 500))));
-app.MapPost("/api/live/events/{id:long}/ack", (long id, LiveHub hub) =>
-{
-    Db.Write((c, tx) => Db.Exec(c, tx, "UPDATE live_events SET acknowledged=1 WHERE id=$1", id));
-    hub.Publish("ack", new { id });
-    return Results.Ok(new { id });
-});
-app.MapPost("/api/live/ack-all", (LiveHub hub) =>
-{
-    Db.Write((c, tx) => Db.Exec(c, tx, "UPDATE live_events SET acknowledged=1 WHERE kind='notification'"));
-    hub.Publish("ack", new { all = true });
-    return Results.Ok(new { ok = true });
-});
-// Simulated data is not a record: clearing it is allowed (it never reaches journals or ROI).
-app.MapPost("/api/live/clear", (LiveService live, LiveHub hub) =>
-{
-    live.TurnOff();
-    Db.Write((c, tx) => Db.Exec(c, tx, "DELETE FROM live_events"));
-    hub.Publish("cleared", new { ok = true });
-    return Results.Ok(new { ok = true });
-});
-app.MapGet("/api/live/stream", async (HttpContext ctx, LiveHub hub, LiveService live, bool? once) =>
-{
-    ctx.Response.Headers.ContentType = "text/event-stream";
-    ctx.Response.Headers.CacheControl = "no-cache";
-    ctx.Response.Headers["X-Accel-Buffering"] = "no";
-    var (reader, dispose) = hub.Subscribe();
-    try
-    {
-        await ctx.Response.WriteAsync($"retry: 3000\nevent: state\ndata: {JsonSerializer.Serialize(live.Sim.State(), LiveHub.Json)}\n\n", ctx.RequestAborted);
-        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
-        if (once == true) return;
-        var ct = ctx.RequestAborted;
-        while (!ct.IsCancellationRequested)
-        {
-            var wait = reader.WaitToReadAsync(ct).AsTask();
-            if (await Task.WhenAny(wait, Task.Delay(15000, ct)) != wait) { await ctx.Response.WriteAsync(": keep-alive\n\n", ct); await ctx.Response.Body.FlushAsync(ct); continue; }
-            if (!await wait) break;
-            while (reader.TryRead(out var msg)) await ctx.Response.WriteAsync(msg, ct);
-            await ctx.Response.Body.FlushAsync(ct);
-        }
-    }
-    catch (OperationCanceledException) { }
-    finally { dispose(); }
-});
 
 // ---------------- demo player ----------------
 static string Script(string? s) => s == "w03" ? "w03" : "w01";
