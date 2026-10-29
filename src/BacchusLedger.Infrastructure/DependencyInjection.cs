@@ -35,7 +35,7 @@ public static class DependencyInjection
         .AddScoped<IOriginRepository, SqliteOriginRepository>()
         .AddScoped<ILabRepository, SqliteLabRepository>()
         .AddScoped<IReadingRepository, SqliteReadingRepository>()
-        .AddScoped<ISettingsRepository, SqliteSettingsRepository>()
+        .AddScoped<ISettingsRepository, EfSettingsRepository>()
         .AddScoped<ILiveEventRepository, SqliteLiveEventRepository>()
         .AddScoped<IDemoRepository, SqliteDemoRepository>()
         .AddScoped<IMaintenanceRepository, SqliteMaintenanceRepository>()
