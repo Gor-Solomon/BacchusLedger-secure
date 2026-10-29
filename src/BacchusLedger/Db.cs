@@ -234,6 +234,19 @@ public static class Db
     public static double SettingD(Dictionary<string, string> s, string key) =>
         double.Parse(s.TryGetValue(key, out var v) ? v : DefaultSettings[key], CultureInfo.InvariantCulture);
 
+    public static bool IsCopy(Dictionary<string, object?> b) => (b["source_note"] as string ?? "").Contains("copy");
+
+    public static Dictionary<string, object?>? BatchRow(SqliteConnection c, long id) =>
+        Query(c, "SELECT b.*, w.code AS winery_code, w.name AS winery_name FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE b.id=$1", id).FirstOrDefault();
+
+    /// Find a vessel by internal code or by its cellar label (what is written on the tape in the cellar).
+    public static Dictionary<string, object?>? VesselRow(SqliteConnection c, string code, string? winery) =>
+        Query(c, """
+            SELECT v.*, w.code AS winery_code FROM vessels v JOIN wineries w ON w.id=v.winery_id
+            WHERE (v.code=$1 OR (COALESCE(v.cellar_label,'')<>'' AND lower(trim(v.cellar_label))=lower(trim($1)))) AND ($2 IS NULL OR w.code=$2)
+            ORDER BY v.code=$1 DESC, v.id
+            """, code, winery).FirstOrDefault();
+
     public static double? D(object? o) => o == null ? null : Convert.ToDouble(o, CultureInfo.InvariantCulture);
     public static long? L(object? o) => o == null ? null : Convert.ToInt64(o, CultureInfo.InvariantCulture);
 }

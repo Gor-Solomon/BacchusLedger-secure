@@ -4,30 +4,14 @@ using System.Text.Json.Nodes;
 using BacchusLedger;
 using Microsoft.Data.Sqlite;
 
-CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
-CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
-
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.ConfigureHttpJsonOptions(o =>
-{
-    o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
-    o.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
-});
-builder.Services.AddSingleton<LiveHub>();
-builder.Services.AddSingleton<LiveService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveService>());
+var startup = new Startup();
+startup.ConfigureServices(builder.Services);
 var app = builder.Build();
-
-Db.Init(string.Equals(Environment.GetEnvironmentVariable("RESET_ON_START"), "true", StringComparison.OrdinalIgnoreCase));
-Seal.EnsureAll(); // secure copy: hash chain + DEMO signature for every batch
-
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-app.MapGet("/health", () => Results.Ok(new { status = "ok", db = Db.Path }));
+startup.Configure(app);
 
 // ---------------- helpers ----------------
-static bool IsCopy(Dictionary<string, object?> b) => (b["source_note"] as string ?? "").Contains("copy");
+static bool IsCopy(Dictionary<string, object?> b) => Db.IsCopy(b);
 
 static Dictionary<string, object?>? BatchRow(SqliteConnection c, long id) =>
     Db.Query(c, "SELECT b.*, w.code AS winery_code, w.name AS winery_name FROM batches b JOIN wineries w ON w.id=b.winery_id WHERE b.id=$1", id).FirstOrDefault();
@@ -127,39 +111,6 @@ static object BatchSummary(SqliteConnection c, Dictionary<string, object?> b, Di
         above = r.Stages.Count(x => x.Status == "above"), negative = r.Stages.Count(x => x.Status == "negative"),
     };
 }
-
-// ---------------- overview ----------------
-app.MapGet("/api/overview", () =>
-{
-    using var c = Db.Open();
-    var s = Db.Settings();
-    var batches = Db.Query(c, "SELECT b.*, w.code AS winery_code FROM batches b JOIN wineries w ON w.id=b.winery_id ORDER BY b.code");
-    double inCellar = 0, loss = 0, value = 0; int real = 0;
-    var flags = new List<object>();
-    foreach (var b in batches)
-    {
-        var r = LossEngine.Analyze(c, (long)b["id"]!, s, compare: false);
-        bool copy = IsCopy(b);
-        if (!copy) { real++; inCellar += r.LitresNow; loss += r.TotalLossL; value += r.LossValueUsd; }
-        foreach (var st in r.Stages.Where(x => x.Status is "above" or "negative"))
-            flags.Add(new
-            {
-                batch = b["code"], batch_id = b["id"], copy, level = st.Status, date = st.Date, stage = st.StageKey, loss_l = st.LossL, loss_pct = st.LossPct, norm_pct = st.NormPct, excess_l = st.ExcessL,
-                text = st.Status == "above" ? "Above normal" : "More than recorded — check the reading", source = "Calculated",
-            });
-        foreach (var ch in r.Checks.Where(x => x.Status is "fail" or "info" && x.Key != "origin"))
-            flags.Add(new { batch = b["code"], batch_id = b["id"], copy, level = ch.Status, text = ch.Label, detail = ch.Detail, source = ch.Source });
-    }
-    return Results.Ok(new
-    {
-        kpi = new { wine_in_cellar_l = Math.Round(inCellar, 1), batches = real, total_loss_l = Math.Round(loss, 1), loss_value_usd = Math.Round(value, 2) },
-        flags,
-        one_percent = Money.OnePercentTable(c, Db.SettingD(s, "value_per_litre_usd"), Db.SettingD(s, "litres_per_tonne")),
-        settings = s,
-    });
-});
-
-app.MapGet("/api/wineries", () => Db.Query("SELECT * FROM wineries ORDER BY code"));
 
 // ---------------- batches ----------------
 app.MapGet("/api/batches", () =>

@@ -476,11 +476,11 @@ public static class DemoScript
 public static class Money
 {
     /// "What 1% of loss costs per year" = yearly_t × litres_per_tonne × 1% × value_per_litre.
-    public static List<object> OnePercentTable(SqliteConnection c, double vpl, double lpt) =>
+    public static List<Contracts.Overview.OnePercentRow> OnePercentTable(SqliteConnection c, double vpl, double lpt) =>
         Db.Query(c, "SELECT code, name, size, yearly_t FROM wineries ORDER BY yearly_t").Select(w =>
         {
             double t = Db.D(w["yearly_t"]) ?? 0;
             double v = Math.Round(t * lpt * 0.01 * vpl, 0, MidpointRounding.AwayFromZero);
-            return (object)new { winery = w["code"], name = w["name"], size = w["size"], yearly_t = t, litres_1pct = Math.Round(t * lpt * 0.01, 1), usd = v, up_to = (string)w["code"]! == "W01" };
+            return new Contracts.Overview.OnePercentRow((string)w["code"]!, w["name"] as string, w["size"] as string, t, Math.Round(t * lpt * 0.01, 1), v, (string)w["code"]! == "W01");
         }).ToList();
 }
